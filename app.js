@@ -106,6 +106,7 @@ const secondaryDetailSourceEl = document.querySelector("#secondary-detail-source
 let latestResults = [];
 let selectedSymbol = null;
 let previousSelectedSymbol = null;
+let selectionHistory = [];
 let selectedRange = DEFAULT_RANGE;
 let detailChart = null;
 let secondaryDetailChart = null;
@@ -138,6 +139,9 @@ async function loadData() {
     const firstAvailable = latestResults.find((entry) => entry.ok)?.symbol || null;
     if (!selectedSymbol || !latestResults.some((entry) => entry.symbol === selectedSymbol && entry.ok)) {
       selectedSymbol = firstAvailable;
+    }
+    if (selectedSymbol) {
+      rememberSelection(selectedSymbol);
     }
 
     renderCards(payload.results);
@@ -366,10 +370,11 @@ function renderDetail() {
     sourceEl: detailSourceEl
   });
 
-  const secondaryAsset = assets.find((asset) => asset.symbol === previousSelectedSymbol);
-  const secondaryResult = latestResults.find((entry) => entry.symbol === previousSelectedSymbol && entry.ok);
+  const secondarySymbol = selectionHistory.length > 1 ? selectionHistory[selectionHistory.length - 2] : null;
+  const secondaryAsset = assets.find((asset) => asset.symbol === secondarySymbol);
+  const secondaryResult = latestResults.find((entry) => entry.symbol === secondarySymbol && entry.ok);
 
-  if (secondaryAsset && secondaryResult && previousSelectedSymbol !== selectedSymbol) {
+  if (secondaryAsset && secondaryResult && secondarySymbol !== selectedSymbol) {
     secondaryDetailPanelEl.classList.remove("hidden");
     renderDetailPanel({
       asset: secondaryAsset,
@@ -949,6 +954,21 @@ function formatPointDate(timestamp) {
   });
 }
 
+function rememberSelection(symbol) {
+  if (!symbol) {
+    return;
+  }
+
+  selectionHistory = selectionHistory.filter((item) => item !== symbol);
+  selectionHistory.push(symbol);
+
+  if (selectionHistory.length > 2) {
+    selectionHistory = selectionHistory.slice(-2);
+  }
+
+  previousSelectedSymbol = selectionHistory.length > 1 ? selectionHistory[0] : null;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -990,6 +1010,7 @@ cardsEl.addEventListener("click", (event) => {
     previousSelectedSymbol = selectedSymbol;
   }
   selectedSymbol = symbol;
+  rememberSelection(symbol);
   renderCards(latestResults);
   renderDetail();
 });
