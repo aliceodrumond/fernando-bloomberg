@@ -69,7 +69,7 @@ body {
 
 .top-right-column {
   display: grid;
-  grid-template-rows: auto minmax(230px, 1fr);
+  grid-template-rows: auto minmax(170px, 1fr);
   gap: 10px;
 }
 
@@ -134,7 +134,7 @@ h1 {
 }
 
 .clock-time {
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.7rem, 3.2vw, 2.7rem);
   line-height: 1;
 }
 
@@ -546,16 +546,16 @@ h1 {
   display: grid;
   gap: 0;
   align-content: start;
-  max-height: 230px;
+  max-height: 170px;
   overflow-y: auto;
 }
 
 .headline-top-panel .top-headlines {
-  min-height: 230px;
+  min-height: 170px;
 }
 
 .headline-item {
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -563,14 +563,14 @@ h1 {
   color: var(--text);
   text-decoration: none;
   line-height: 1.3;
-  font-size: 0.9rem;
+  font-size: 0.83rem;
 }
 
 .headline-meta {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-family: "JetBrains Mono", monospace;
   text-transform: uppercase;
 }
