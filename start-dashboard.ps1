@@ -33,6 +33,21 @@ $NewsFeeds = @{
   world = "https://news.google.com/rss/search?q=world+war+geopolitics+markets&hl=en-US&gl=US&ceid=US:en"
 }
 
+$PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/"
+$PalmeirasCalendarUrl = "https://www.palmeiras.com.br/calendario/"
+$FifaGamesUrl = "https://fifaworldcup26.suites.fifa.com/games/"
+$PalmeirasCityMap = @{
+  "allianz parque" = "São Paulo"
+  "arena crefisa barueri" = "Barueri"
+  "arena fonte nova" = "Salvador"
+  "neo química arena" = "São Paulo"
+  "olímpico jaime morón león" = "Cartagena"
+  "olimpico jaime moron leon" = "Cartagena"
+  "cícero de souza marques" = "Bragança Paulista"
+  "cicero de souza marques" = "Bragança Paulista"
+  "nueva olla" = "Assunção"
+}
+
 function Send-Json {
   param(
     [Parameter(Mandatory = $true)] $Response,
@@ -341,6 +356,222 @@ function Get-NewsFeedItems {
   return $items
 }
 
+function Normalize-Text {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Value
+  )
+
+  if ($null -eq $Value) {
+    return ""
+  }
+
+  return ($Value `
+    -replace "<[^>]+>", " " `
+    -replace "&nbsp;", " " `
+    -replace "&amp;", "&" `
+    -replace "&quot;", '"' `
+    -replace "&#39;", "'" `
+    -replace "\s+", " ").Trim()
+}
+
+function Get-SlugKey {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Value
+  )
+
+  $normalized = Normalize-Text -Value $Value
+  $decomposed = $normalized.Normalize([Text.NormalizationForm]::FormD)
+  $builder = New-Object System.Text.StringBuilder
+
+  foreach ($char in $decomposed.ToCharArray()) {
+    $category = [Globalization.CharUnicodeInfo]::GetUnicodeCategory($char)
+    if ($category -ne [Globalization.UnicodeCategory]::NonSpacingMark) {
+      [void]$builder.Append($char)
+    }
+  }
+
+  return $builder.ToString().ToLowerInvariant()
+}
+
+function Get-MonthReferences {
+  param(
+    [int] $Count = 3
+  )
+
+  $refs = @()
+  $today = Get-Date
+
+  for ($offset = 0; $offset -lt $Count; $offset++) {
+    $cursor = Get-Date -Year $today.Year -Month $today.Month -Day 1
+    $cursor = $cursor.AddMonths($offset)
+    $refs += @{
+      year = $cursor.Year
+      month = $cursor.Month
+    }
+  }
+
+  return $refs
+}
+
+function Get-MatchTimestamp {
+  param(
+    [Parameter(Mandatory = $true)] [int] $Year,
+    [Parameter(Mandatory = $true)] [string] $DateLabel,
+    [Parameter(Mandatory = $false)] [string] $TimeLabel
+  )
+
+  $parts = $DateLabel.Split("/")
+  if ($parts.Count -lt 2) {
+    return $null
+  }
+
+  $day = [int]$parts[0]
+  $month = [int]$parts[1]
+  $sourceTime = if ([string]::IsNullOrWhiteSpace($TimeLabel)) { "00:00" } else { $TimeLabel }
+  $cleanTime = $sourceTime -replace "[Hh]", ":"
+  $timeParts = $cleanTime.Split(":")
+  if ($timeParts.Count -lt 2) {
+    return $null
+  }
+
+  $hour = [int]$timeParts[0]
+  $minute = [int]$timeParts[1]
+  return (Get-Date -Year $Year -Month $month -Day $day -Hour $hour -Minute $minute -Second 0).Ticks
+}
+
+function Format-DateLabel {
+  param(
+    [Parameter(Mandatory = $true)] [datetime] $Date
+  )
+
+  return $Date.ToString("dd/MM/yyyy")
+}
+
+function Format-TimeLabel {
+  param(
+    [Parameter(Mandatory = $true)] [datetime] $Date
+  )
+
+  return $Date.ToString("HH:mm")
+}
+
+function Resolve-PalmeirasCity {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Stadium
+  )
+
+  $key = Get-SlugKey -Value $Stadium
+  foreach ($needle in $PalmeirasCityMap.Keys) {
+    if ($key.Contains($needle)) {
+      return $PalmeirasCityMap[$needle]
+    }
+  }
+
+  return Normalize-Text -Value $Stadium
+}
+
+function Get-PalmeirasGames {
+  $refs = Get-MonthReferences -Count 3
+  $games = @()
+  $headers = @{ "User-Agent" = "Mozilla/5.0" }
+
+  foreach ($ref in $refs) {
+    $url = "$PalmeirasApiRoot?mes=$($ref.month)&ano=$($ref.year)"
+    $payload = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+
+    foreach ($game in @($payload.jogos)) {
+      $rawTime = if ([string]::IsNullOrWhiteSpace([string]$game.hora1)) { [string]$game.hora } else { [string]$game.hora1 }
+      $ticks = Get-MatchTimestamp -Year $ref.year -DateLabel ([string]$game.data_jogo) -TimeLabel $rawTime
+      if ($null -eq $ticks) {
+        continue
+      }
+
+      $date = [datetime]::new($ticks)
+      if ($date -lt (Get-Date)) {
+        continue
+      }
+
+      $home = Normalize-Text -Value ([string]$game.time_casa)
+      $away = Normalize-Text -Value ([string]$game.time_visitante)
+      $opponent = if ((Get-SlugKey -Value $home) -eq "palmeiras") { $away } else { $home }
+
+      $games += @{
+        timestamp = $ticks
+        label = "Palmeiras x $opponent"
+        team = "Palmeiras"
+        opponent = $opponent
+        date = Format-DateLabel -Date $date
+        time = (Normalize-Text -Value $rawTime) -replace "[Hh]", ":"
+        city = Resolve-PalmeirasCity -Stadium ([string]$game.estadio)
+        stadium = Normalize-Text -Value ([string]$game.estadio)
+        competition = Normalize-Text -Value ([string]$game.campeonato)
+        source = "Palmeiras oficial"
+        link = $PalmeirasCalendarUrl
+      }
+    }
+  }
+
+  return @($games | Sort-Object timestamp | Select-Object -First 2)
+}
+
+function Parse-FifaStartDate {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Value
+  )
+
+  $match = [regex]::Match($Value, "^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})")
+  if (-not $match.Success) {
+    return $null
+  }
+
+  return Get-Date -Year ([int]$match.Groups[1].Value) -Month ([int]$match.Groups[2].Value) -Day ([int]$match.Groups[3].Value) -Hour ([int]$match.Groups[4].Value) -Minute ([int]$match.Groups[5].Value) -Second 0
+}
+
+function Get-BrazilGames {
+  $response = Invoke-WebRequest -Uri $FifaGamesUrl -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
+  $matches = [regex]::Matches($response.Content, '<script type="application/ld\+json">(\{[\s\S]*?\})</script>')
+  $games = @()
+
+  foreach ($match in $matches) {
+    try {
+      $entry = $match.Groups[1].Value | ConvertFrom-Json
+    }
+    catch {
+      continue
+    }
+
+    if ($entry.'@type' -ne "Event" -or -not [string]$entry.name -or $entry.name -notmatch "Brazil") {
+      continue
+    }
+
+    $date = Parse-FifaStartDate -Value ([string]$entry.startDate)
+    if ($null -eq $date -or $date -lt (Get-Date)) {
+      continue
+    }
+
+    $parts = (Normalize-Text -Value ([string]$entry.name)) -split "\s+vs\.\s+"
+    $left = if ($parts.Count -ge 1) { $parts[0] } else { "" }
+    $right = if ($parts.Count -ge 2) { $parts[1] } else { "" }
+    $opponent = if ((Get-SlugKey -Value $left) -eq "brazil") { $right } elseif ((Get-SlugKey -Value $right) -eq "brazil") { $left } else { Normalize-Text -Value ([string]$entry.name) }
+
+    $games += @{
+      timestamp = $date.Ticks
+      label = "Brasil x $opponent"
+      team = "Brasil"
+      opponent = $opponent
+      date = Format-DateLabel -Date $date
+      time = Format-TimeLabel -Date $date
+      city = Normalize-Text -Value ([string]$entry.location.address.addressLocality)
+      stadium = Normalize-Text -Value ([string]$entry.location.name)
+      competition = "Copa do Mundo 2026"
+      source = "FIFA oficial"
+      link = $FifaGamesUrl
+    }
+  }
+
+  return @($games | Sort-Object timestamp | Select-Object -First 3)
+}
+
 try {
   while ($listener.IsListening) {
     $context = $listener.GetContext()
@@ -356,6 +587,38 @@ try {
           us = Get-NewsFeedItems -Url $NewsFeeds.us
           world = Get-NewsFeedItems -Url $NewsFeeds.world
           asOf = [DateTime]::UtcNow.ToString("o")
+        }
+        continue
+      }
+
+      if ($path -eq "/api/games") {
+        $errors = @{}
+        $palmeiras = @()
+        $brazil = @()
+
+        try {
+          $palmeiras = Get-PalmeirasGames
+        }
+        catch {
+          $errors.palmeiras = $_.Exception.Message
+        }
+
+        try {
+          $brazil = Get-BrazilGames
+        }
+        catch {
+          $errors.brazil = $_.Exception.Message
+        }
+
+        Send-Json -Response $response -StatusCode 200 -Payload @{
+          palmeiras = $palmeiras
+          brazil = $brazil
+          errors = $errors
+          asOf = [DateTime]::UtcNow.ToString("o")
+          sources = @{
+            palmeiras = $PalmeirasCalendarUrl
+            brazil = $FifaGamesUrl
+          }
         }
         continue
       }

@@ -68,6 +68,9 @@ body {
 }
 
 .brand-block {
+  display: grid;
+  gap: 12px;
+  align-content: start;
   padding: 12px 14px;
   background: linear-gradient(180deg, rgba(255, 176, 31, 0.06), rgba(255, 176, 31, 0.01));
   border: 1px solid var(--line-soft);
@@ -450,6 +453,74 @@ h1 {
 .headline-strip-panel {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, #121212, #0b0b0b);
+}
+
+.games-panel {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.96), rgba(8, 8, 8, 0.98));
+}
+
+.games-box {
+  display: grid;
+  gap: 0;
+}
+
+.games-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.games-section:last-child {
+  border-bottom: 0;
+}
+
+.games-section-title {
+  padding: 10px 12px 8px;
+  color: var(--amber);
+  font-size: 0.72rem;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+}
+
+.game-item,
+.games-empty,
+.games-error {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.game-item {
+  display: grid;
+  gap: 5px;
+}
+
+.game-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.game-meta,
+.game-submeta,
+.games-empty,
+.games-error {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+}
+
+.game-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.game-submeta {
+  line-height: 1.5;
+}
+
+.games-error {
+  color: #ffc2c2;
 }
 
 .mini-panel-bar {

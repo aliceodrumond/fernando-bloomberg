@@ -88,6 +88,8 @@ const newsBrazilEl = document.querySelector("#news-brazil");
 const newsUsEl = document.querySelector("#news-us");
 const newsWorldEl = document.querySelector("#news-world");
 const topHeadlinesEl = document.querySelector("#top-headlines");
+const gamesBoxEl = document.querySelector("#games-box");
+const gamesStatusEl = document.querySelector("#games-status");
 
 let latestResults = [];
 let selectedSymbol = null;
@@ -97,16 +99,18 @@ let detailChart = null;
 async function loadData() {
   cardsEl.innerHTML = `<div class="loading">Atualizando watchlist...</div>`;
   renderNewsLoading();
+  renderGamesLoading();
 
   const yahooAssets = assets.filter((asset) => asset.source !== "diProxy");
   const diAssets = assets.filter((asset) => asset.source === "diProxy");
 
-  const [marketResult, newsResult] = await Promise.allSettled([
+  const [marketResult, newsResult, gamesResult] = await Promise.allSettled([
     fetchMarketPayload(
       yahooAssets.map((asset) => asset.symbol),
       diAssets.map((asset) => asset.symbol)
     ),
-    fetchNewsPayload()
+    fetchNewsPayload(),
+    fetchGamesPayload()
   ]);
 
   try {
@@ -136,6 +140,12 @@ async function loadData() {
     renderNews(newsResult.value);
   } else {
     renderNewsError(newsResult.reason);
+  }
+
+  if (gamesResult.status === "fulfilled") {
+    renderGames(gamesResult.value);
+  } else {
+    renderGamesError(gamesResult.reason);
   }
 }
 
@@ -175,6 +185,17 @@ async function fetchNewsPayload() {
 
   if (!response.ok) {
     throw new Error(payload.error || "Falha ao carregar noticias.");
+  }
+
+  return payload;
+}
+
+async function fetchGamesPayload() {
+  const response = await fetch("/api/games");
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Falha ao carregar jogos.");
   }
 
   return payload;
@@ -440,6 +461,11 @@ function renderNewsLoading() {
   newsWorldEl.innerHTML = `<div class="news-empty">Carregando notícias do mundo...</div>`;
 }
 
+function renderGamesLoading() {
+  gamesStatusEl.textContent = "Atualizando...";
+  gamesBoxEl.innerHTML = `<div class="games-empty">Carregando agenda de Palmeiras e Brasil...</div>`;
+}
+
 function renderNews(payload) {
   renderTopHeadlines(payload);
   renderNewsColumn(newsBrazilEl, payload.brazil || [], "Sem notícias do Brasil agora.");
@@ -453,6 +479,73 @@ function renderNewsError(error) {
   newsBrazilEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsUsEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsWorldEl.innerHTML = `<div class="news-empty">${message}</div>`;
+}
+
+function renderGames(payload) {
+  const sections = [];
+
+  if (Array.isArray(payload.palmeiras) && payload.palmeiras.length) {
+    sections.push(renderGamesSection("Palmeiras", payload.palmeiras));
+  }
+
+  if (Array.isArray(payload.brazil) && payload.brazil.length) {
+    sections.push(renderGamesSection("Brasil", payload.brazil));
+  }
+
+  if (payload.errors?.palmeiras) {
+    sections.push(renderGamesErrorBlock(`Palmeiras: ${payload.errors.palmeiras}`));
+  }
+
+  if (payload.errors?.brazil) {
+    sections.push(renderGamesErrorBlock(`Brasil: ${payload.errors.brazil}`));
+  }
+
+  gamesBoxEl.innerHTML = sections.length
+    ? sections.join("")
+    : `<div class="games-empty">Sem jogos próximos confirmados nas fontes oficiais agora.</div>`;
+
+  const formatted = payload.asOf
+    ? new Date(payload.asOf).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    : "oficial";
+
+  gamesStatusEl.textContent = `Atualizado ${formatted}`;
+}
+
+function renderGamesError(error) {
+  gamesStatusEl.textContent = "Sem agenda";
+  gamesBoxEl.innerHTML = `
+    <div class="games-error">
+      Não foi possível carregar os próximos jogos.<br />
+      ${escapeHtml(error?.message || "Erro desconhecido.")}
+    </div>
+  `;
+}
+
+function renderGamesSection(title, games) {
+  return `
+    <section class="games-section">
+      <div class="games-section-title">${escapeHtml(title)}</div>
+      ${games.map((game) => renderGameItem(game)).join("")}
+    </section>
+  `;
+}
+
+function renderGameItem(game) {
+  return `
+    <article class="game-item">
+      <div class="game-title">${escapeHtml(game.label || `${game.team} x ${game.opponent}`)}</div>
+      <div class="game-meta">
+        <span>${escapeHtml(game.date || "--")}</span>
+        <span>${escapeHtml(game.time || "--")}</span>
+        <span>${escapeHtml(game.city || game.stadium || "--")}</span>
+      </div>
+      <div class="game-submeta">${escapeHtml([game.competition, game.stadium].filter(Boolean).join(" | "))}</div>
+    </article>
+  `;
+}
+
+function renderGamesErrorBlock(message) {
+  return `<div class="games-error">${escapeHtml(message)}</div>`;
 }
 
 function renderNewsColumn(element, items, emptyText) {
