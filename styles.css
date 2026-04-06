@@ -69,7 +69,7 @@ body {
 
 .top-right-column {
   display: grid;
-  grid-template-rows: auto minmax(170px, 1fr);
+  grid-template-rows: auto minmax(205px, 1fr);
   gap: 10px;
 }
 
@@ -134,7 +134,7 @@ h1 {
 }
 
 .clock-time {
-  font-size: clamp(1.7rem, 3.2vw, 2.7rem);
+  font-size: clamp(1.45rem, 2.7vw, 2.3rem);
   line-height: 1;
 }
 
@@ -546,12 +546,12 @@ h1 {
   display: grid;
   gap: 0;
   align-content: start;
-  max-height: 170px;
+  max-height: 205px;
   overflow-y: auto;
 }
 
 .headline-top-panel .top-headlines {
-  min-height: 170px;
+  min-height: 205px;
 }
 
 .headline-item {
