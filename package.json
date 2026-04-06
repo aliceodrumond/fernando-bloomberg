@@ -1,0 +1,9 @@
+{
+  "name": "bloomberg-yahoo-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Painel de mercado estilo Bloomberg com dados do Yahoo Finance.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

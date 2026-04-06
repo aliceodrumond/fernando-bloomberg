@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse Terminal</title>
+    <meta
+      name="description"
+      content="Painel de mercado estilo Bloomberg com cotações do Yahoo Finance."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell"></div>
+    <main class="page">
+      <section class="top-strip">
+        <div class="brand-block">
+          <p class="eyebrow">Yahoo Finance Market Monitor</p>
+          <h1>Fernando's Bloomberg</h1>
+        </div>
+
+        <div class="clock-strip">
+          <article class="clock-card" data-clock-zone="America/Mexico_City">
+            <span class="clock-time">--:--</span>
+            <span class="clock-city">Mexico City</span>
+          </article>
+          <article class="clock-card" data-clock-zone="America/New_York">
+            <span class="clock-time">--:--</span>
+            <span class="clock-city">New York</span>
+          </article>
+          <article class="clock-card active" data-clock-zone="America/Sao_Paulo">
+            <span class="clock-time">--:--</span>
+            <span class="clock-city">Sao Paulo</span>
+          </article>
+          <article class="clock-card" data-clock-zone="Europe/London">
+            <span class="clock-time">--:--</span>
+            <span class="clock-city">London</span>
+          </article>
+          <article class="clock-card" data-clock-zone="Asia/Shanghai">
+            <span class="clock-time">--:--</span>
+            <span class="clock-city">Beijing</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="system-strip">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          Atualização automática a cada 60 segundos
+        </div>
+        <div class="legend">
+          <span>Spot | 1D | 1M | YTD | 1Y</span>
+          <span>clique na linha para abrir o gráfico</span>
+          <span id="last-updated">Carregando dados...</span>
+        </div>
+      </section>
+
+      <section class="monitor-layout">
+        <section class="monitor-panel watchlist-panel">
+          <div class="panel-bar">
+            <span class="panel-title">Copy of Monitor</span>
+            <span class="panel-meta">Watchlist</span>
+          </div>
+          <section id="cards" class="cards" aria-live="polite"></section>
+        </section>
+
+        <aside class="monitor-panel detail-panel">
+          <div class="panel-bar">
+            <span class="panel-title">Detail Monitor</span>
+            <span class="panel-meta" id="detail-status">Aguardando seleção</span>
+          </div>
+
+          <div id="detail-empty" class="detail-empty">
+            Clique em um ativo da lista para ver o gráfico e ajustar o zoom no eixo X.
+          </div>
+
+          <div id="detail-content" class="detail-content hidden">
+            <div class="detail-header">
+              <div>
+                <p id="detail-group" class="detail-group">Grupo</p>
+                <h2 id="detail-name" class="detail-name">Ativo</h2>
+                <p id="detail-symbol" class="detail-symbol">Ticker</p>
+              </div>
+              <div class="detail-spot-box">
+                <span class="detail-label">Spot</span>
+                <strong id="detail-price" class="detail-price">--</strong>
+              </div>
+            </div>
+
+            <div class="detail-stats">
+              <article class="stat-box">
+                <span>1D</span>
+                <strong id="detail-day">--</strong>
+              </article>
+              <article class="stat-box">
+                <span>1M</span>
+                <strong id="detail-month">--</strong>
+              </article>
+              <article class="stat-box">
+                <span>YTD</span>
+                <strong id="detail-ytd">--</strong>
+              </article>
+              <article class="stat-box">
+                <span>1Y</span>
+                <strong id="detail-year">--</strong>
+              </article>
+            </div>
+
+            <div class="chart-toolbar">
+              <div class="range-buttons" id="range-buttons">
+                <button type="button" class="range-button" data-range="1M">1M</button>
+                <button type="button" class="range-button active" data-range="3M">3M</button>
+                <button type="button" class="range-button" data-range="6M">6M</button>
+                <button type="button" class="range-button" data-range="YTD">YTD</button>
+                <button type="button" class="range-button" data-range="1Y">1Y</button>
+              </div>
+
+              <label class="zoom-control">
+                <span>Zoom X</span>
+                <input id="zoom-slider" type="range" min="20" max="100" step="5" value="100" />
+              </label>
+            </div>
+
+            <div class="chart-panel">
+              <canvas id="detail-chart" aria-label="Gráfico do ativo selecionado"></canvas>
+            </div>
+
+            <div class="detail-footer">
+              <span id="detail-window">Janela: --</span>
+              <span id="detail-source">Fonte: Yahoo Finance</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
