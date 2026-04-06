@@ -69,7 +69,7 @@ body {
 
 .top-right-column {
   display: grid;
-  grid-template-rows: auto minmax(205px, 1fr);
+  grid-template-rows: auto minmax(160px, 1fr);
   gap: 10px;
 }
 
@@ -546,12 +546,12 @@ h1 {
   display: grid;
   gap: 0;
   align-content: start;
-  max-height: 205px;
-  overflow-y: auto;
+  max-height: 160px;
+  overflow: hidden;
 }
 
 .headline-top-panel .top-headlines {
-  min-height: 205px;
+  min-height: 160px;
 }
 
 .headline-item {

@@ -730,7 +730,7 @@ function renderTopHeadlines(payload) {
   const ranked = mixed
     .map((item) => ({ ...item, score: scoreHeadline(item.title) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
+    .slice(0, 3);
 
   if (!ranked.length) {
     topHeadlinesEl.innerHTML = `<div class="news-empty">Sem manchetes relevantes agora.</div>`;
