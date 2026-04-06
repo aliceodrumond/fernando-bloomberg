@@ -528,6 +528,10 @@ function Parse-FifaStartDate {
 }
 
 function Get-BrazilGames {
+  if ((Get-Date).Month -lt 6) {
+    return @()
+  }
+
   $response = Invoke-WebRequest -Uri $FifaGamesUrl -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
   $matches = [regex]::Matches($response.Content, '<script type="application/ld\+json">(\{[\s\S]*?\})</script>')
   $games = @()

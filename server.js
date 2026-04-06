@@ -514,6 +514,11 @@ async function fetchPalmeirasGames() {
 }
 
 async function fetchBrazilGames() {
+  const now = new Date();
+  if (now.getMonth() < 5) {
+    return [];
+  }
+
   const response = await fetch(FIFA_GAMES_URL, { headers: YAHOO_HEADERS });
   if (!response.ok) {
     throw new Error(`FIFA respondeu com status ${response.status}.`);
@@ -521,7 +526,7 @@ async function fetchBrazilGames() {
 
   const html = await response.text();
   const matches = [...html.matchAll(/<script type="application\/ld\+json">(\{[\s\S]*?\})<\/script>/g)];
-  const now = Date.now();
+  const nowTimestamp = Date.now();
 
   return matches
     .map((match) => {
@@ -551,7 +556,7 @@ async function fetchBrazilGames() {
         link: FIFA_GAMES_URL
       };
     })
-    .filter((game) => Number.isFinite(game.timestamp) && game.timestamp >= now)
+    .filter((game) => Number.isFinite(game.timestamp) && game.timestamp >= nowTimestamp)
     .sort((a, b) => a.timestamp - b.timestamp)
     .slice(0, 3);
 }
