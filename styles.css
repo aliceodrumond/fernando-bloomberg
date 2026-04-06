@@ -439,6 +439,56 @@ h1 {
   flex-wrap: wrap;
 }
 
+.headline-strip-panel {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #121212, #0b0b0b);
+}
+
+.mini-panel-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--amber);
+  font-size: 0.72rem;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+}
+
+.top-headlines {
+  display: grid;
+  gap: 0;
+}
+
+.headline-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.headline-item:last-child {
+  border-bottom: 0;
+}
+
+.headline-item a {
+  color: var(--text);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.headline-item a:hover {
+  color: var(--amber);
+}
+
+.headline-meta {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+}
+
 .range-buttons {
   display: flex;
   gap: 8px;

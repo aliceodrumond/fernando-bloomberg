@@ -87,6 +87,7 @@ const clockCards = Array.from(document.querySelectorAll("[data-clock-zone]"));
 const newsBrazilEl = document.querySelector("#news-brazil");
 const newsUsEl = document.querySelector("#news-us");
 const newsWorldEl = document.querySelector("#news-world");
+const topHeadlinesEl = document.querySelector("#top-headlines");
 
 let latestResults = [];
 let selectedSymbol = null;
@@ -433,12 +434,14 @@ function renderProxyBadge(asset) {
 }
 
 function renderNewsLoading() {
+  topHeadlinesEl.innerHTML = `<div class="news-empty">Carregando manchetes relevantes...</div>`;
   newsBrazilEl.innerHTML = `<div class="news-empty">Carregando notícias do Brasil...</div>`;
   newsUsEl.innerHTML = `<div class="news-empty">Carregando notícias dos EUA...</div>`;
   newsWorldEl.innerHTML = `<div class="news-empty">Carregando notícias do mundo...</div>`;
 }
 
 function renderNews(payload) {
+  renderTopHeadlines(payload);
   renderNewsColumn(newsBrazilEl, payload.brazil || [], "Sem notícias do Brasil agora.");
   renderNewsColumn(newsUsEl, payload.us || [], "Sem notícias dos EUA agora.");
   renderNewsColumn(newsWorldEl, payload.world || [], "Sem notícias globais agora.");
@@ -446,6 +449,7 @@ function renderNews(payload) {
 
 function renderNewsError(error) {
   const message = escapeHtml(error?.message || "Falha ao carregar notícias.");
+  topHeadlinesEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsBrazilEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsUsEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsWorldEl.innerHTML = `<div class="news-empty">${message}</div>`;
@@ -467,6 +471,69 @@ function renderNewsColumn(element, items, emptyText) {
       `
     )
     .join("");
+}
+
+function renderTopHeadlines(payload) {
+  const mixed = [...(payload.brazil || []), ...(payload.world || [])];
+  const ranked = mixed
+    .map((item) => ({ ...item, score: scoreHeadline(item.title) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  if (!ranked.length) {
+    topHeadlinesEl.innerHTML = `<div class="news-empty">Sem manchetes relevantes agora.</div>`;
+    return;
+  }
+
+  topHeadlinesEl.innerHTML = ranked
+    .map(
+      (item) => `
+        <article class="headline-item">
+          <a href="${escapeHtml(item.link)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>
+          <span class="headline-meta">${escapeHtml(item.source || "News")} | ${escapeHtml(item.published || "")}</span>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function scoreHeadline(title) {
+  const text = String(title || "").toLowerCase();
+  let score = 0;
+
+  const priorityTerms = [
+    "war",
+    "guerra",
+    "trump",
+    "fed",
+    "tariff",
+    "tarifa",
+    "china",
+    "inflation",
+    "inflação",
+    "copom",
+    "bcb",
+    "bc",
+    "fiscal",
+    "petrobras",
+    "vale",
+    "oil",
+    "petróleo",
+    "brazil",
+    "brasil",
+    "sanction",
+    "attack",
+    "ataque"
+  ];
+
+  for (const term of priorityTerms) {
+    if (text.includes(term)) {
+      score += 10;
+    }
+  }
+
+  score += Math.max(0, 80 - text.length / 2);
+  return score;
 }
 
 function destroyChart() {
