@@ -477,7 +477,15 @@ function Get-PalmeirasGames {
 
   foreach ($ref in $refs) {
     $url = "$PalmeirasApiRoot?mes=$($ref.month)&ano=$($ref.year)"
-    $payload = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+    $response = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -UseBasicParsing
+    $payload = $null
+
+    try {
+      $payload = $response.Content | ConvertFrom-Json
+    }
+    catch {
+      continue
+    }
 
     foreach ($game in @($payload.jogos)) {
       $rawTime = if ([string]::IsNullOrWhiteSpace([string]$game.hora1)) { [string]$game.hora } else { [string]$game.hora1 }

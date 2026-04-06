@@ -476,11 +476,19 @@ async function fetchPalmeirasGames() {
       const response = await fetch(url, { headers: YAHOO_HEADERS });
 
       if (!response.ok) {
-        throw new Error(`Palmeiras respondeu com status ${response.status}.`);
+        return { year, games: [] };
       }
 
-      const payload = await response.json();
-      return { year, games: payload?.jogos || [] };
+      const raw = await response.text();
+      let payload = null;
+
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return { year, games: [] };
+      }
+
+      return { year, games: Array.isArray(payload?.jogos) ? payload.jogos : [] };
     })
   );
 

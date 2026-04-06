@@ -134,11 +134,19 @@ async function fetchPalmeirasGames() {
       const response = await fetch(url, { headers: DEFAULT_HEADERS });
 
       if (!response.ok) {
-        throw new Error(`Palmeiras respondeu com status ${response.status}.`);
+        return { month, year, games: [] };
       }
 
-      const payload = await response.json();
-      return { month, year, games: payload?.jogos || [] };
+      const raw = await response.text();
+      let payload = null;
+
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return { month, year, games: [] };
+      }
+
+      return { month, year, games: Array.isArray(payload?.jogos) ? payload.jogos : [] };
     })
   );
 
