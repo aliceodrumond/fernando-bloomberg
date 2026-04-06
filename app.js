@@ -81,6 +81,7 @@ const detailMonthEl = document.querySelector("#detail-month");
 const detailYtdEl = document.querySelector("#detail-ytd");
 const detailYearEl = document.querySelector("#detail-year");
 const detailWindowEl = document.querySelector("#detail-window");
+const detailSourceEl = document.querySelector("#detail-source");
 const zoomSliderEl = document.querySelector("#zoom-slider");
 const rangeButtonsEl = document.querySelector("#range-buttons");
 const clockCards = Array.from(document.querySelectorAll("[data-clock-zone]"));
@@ -90,11 +91,24 @@ const newsWorldEl = document.querySelector("#news-world");
 const topHeadlinesEl = document.querySelector("#top-headlines");
 const gamesBoxEl = document.querySelector("#games-box");
 const gamesStatusEl = document.querySelector("#games-status");
+const secondaryDetailPanelEl = document.querySelector("#secondary-detail-panel");
+const secondaryDetailGroupEl = document.querySelector("#secondary-detail-group");
+const secondaryDetailNameEl = document.querySelector("#secondary-detail-name");
+const secondaryDetailSymbolEl = document.querySelector("#secondary-detail-symbol");
+const secondaryDetailPriceEl = document.querySelector("#secondary-detail-price");
+const secondaryDetailDayEl = document.querySelector("#secondary-detail-day");
+const secondaryDetailMonthEl = document.querySelector("#secondary-detail-month");
+const secondaryDetailYtdEl = document.querySelector("#secondary-detail-ytd");
+const secondaryDetailYearEl = document.querySelector("#secondary-detail-year");
+const secondaryDetailWindowEl = document.querySelector("#secondary-detail-window");
+const secondaryDetailSourceEl = document.querySelector("#secondary-detail-source");
 
 let latestResults = [];
 let selectedSymbol = null;
+let previousSelectedSymbol = null;
 let selectedRange = DEFAULT_RANGE;
 let detailChart = null;
+let secondaryDetailChart = null;
 
 async function loadData() {
   cardsEl.innerHTML = `<div class="loading">Atualizando watchlist...</div>`;
@@ -328,40 +342,54 @@ function renderDetail() {
     detailEmptyEl.classList.remove("hidden");
     detailContentEl.classList.add("hidden");
     detailStatusEl.textContent = "Selecione um ativo";
-    destroyChart();
+    destroyCharts();
     return;
   }
 
-  const { data } = activeResult;
-  const formatter = activeAsset.formatter || inferFormatter(data.currency);
-  const filteredPoints = getFilteredPoints(data.points || [], selectedRange, Number(zoomSliderEl.value));
-  const firstLabel = filteredPoints[0];
-  const lastLabel = filteredPoints[filteredPoints.length - 1];
-
   detailEmptyEl.classList.add("hidden");
   detailContentEl.classList.remove("hidden");
+  detailStatusEl.textContent = `${activeAsset.group} | ${activeResult.data.exchangeName || activeResult.data.marketState || "Yahoo"}`;
 
-  detailStatusEl.textContent = `${activeAsset.group} | ${data.exchangeName || data.marketState || "Yahoo"}`;
-  detailGroupEl.textContent = activeAsset.group;
-  detailNameEl.innerHTML = `
-    <span class="detail-title-line">
-      <span>${escapeHtml(activeAsset.name)}</span>
-      ${renderProxyBadge(activeAsset)}
-    </span>
-  `;
-  detailSymbolEl.textContent = activeAsset.symbol;
-  detailPriceEl.textContent = formatter(data.regularMarketPrice);
+  renderDetailPanel({
+    asset: activeAsset,
+    result: activeResult,
+    chartKey: "primary",
+    groupEl: detailGroupEl,
+    nameEl: detailNameEl,
+    symbolEl: detailSymbolEl,
+    priceEl: detailPriceEl,
+    dayEl: detailDayEl,
+    monthEl: detailMonthEl,
+    ytdEl: detailYtdEl,
+    yearEl: detailYearEl,
+    windowEl: detailWindowEl,
+    sourceEl: detailSourceEl
+  });
 
-  setChangeText(detailDayEl, data.changes.day);
-  setChangeText(detailMonthEl, data.changes.month);
-  setChangeText(detailYtdEl, data.changes.ytd);
-  setChangeText(detailYearEl, data.changes.year);
+  const secondaryAsset = assets.find((asset) => asset.symbol === previousSelectedSymbol);
+  const secondaryResult = latestResults.find((entry) => entry.symbol === previousSelectedSymbol && entry.ok);
 
-  detailWindowEl.textContent = firstLabel && lastLabel
-    ? `Janela: ${formatPointDate(firstLabel.timestamp)} a ${formatPointDate(lastLabel.timestamp)}`
-    : "Janela: --";
-
-  renderChart(filteredPoints, formatter, activeAsset.name);
+  if (secondaryAsset && secondaryResult && previousSelectedSymbol !== selectedSymbol) {
+    secondaryDetailPanelEl.classList.remove("hidden");
+    renderDetailPanel({
+      asset: secondaryAsset,
+      result: secondaryResult,
+      chartKey: "secondary",
+      groupEl: secondaryDetailGroupEl,
+      nameEl: secondaryDetailNameEl,
+      symbolEl: secondaryDetailSymbolEl,
+      priceEl: secondaryDetailPriceEl,
+      dayEl: secondaryDetailDayEl,
+      monthEl: secondaryDetailMonthEl,
+      ytdEl: secondaryDetailYtdEl,
+      yearEl: secondaryDetailYearEl,
+      windowEl: secondaryDetailWindowEl,
+      sourceEl: secondaryDetailSourceEl
+    });
+  } else {
+    secondaryDetailPanelEl.classList.add("hidden");
+    destroySecondaryChart();
+  }
 }
 
 function renderDetailError(error) {
@@ -369,17 +397,17 @@ function renderDetailError(error) {
   detailContentEl.classList.add("hidden");
   detailStatusEl.textContent = "Sem conexão";
   detailEmptyEl.textContent = `Nao foi possivel carregar o painel de detalhe. ${error.message || ""}`.trim();
-  destroyChart();
+  destroyCharts();
 }
 
 function renderChart(points, formatter, label) {
   const canvas = document.querySelector("#detail-chart");
   if (!canvas || !points.length) {
-    destroyChart();
+    destroyPrimaryChart();
     return;
   }
 
-  destroyChart();
+  destroyPrimaryChart();
 
   detailChart = new Chart(canvas, {
     type: "line",
@@ -444,6 +472,132 @@ function renderChart(points, formatter, label) {
       }
     }
   });
+}
+
+function renderDetailPanel(config) {
+  const { asset, result, chartKey, groupEl, nameEl, symbolEl, priceEl, dayEl, monthEl, ytdEl, yearEl, windowEl, sourceEl } = config;
+  const { data } = result;
+  const formatter = asset.formatter || inferFormatter(data.currency);
+  const filteredPoints = getFilteredPoints(data.points || [], selectedRange, Number(zoomSliderEl.value));
+  const firstLabel = filteredPoints[0];
+  const lastLabel = filteredPoints[filteredPoints.length - 1];
+
+  groupEl.textContent = asset.group;
+  nameEl.innerHTML = `
+    <span class="detail-title-line">
+      <span>${escapeHtml(asset.name)}</span>
+      ${renderProxyBadge(asset)}
+    </span>
+  `;
+  symbolEl.textContent = asset.symbol;
+  priceEl.textContent = formatter(data.regularMarketPrice);
+  setChangeText(dayEl, data.changes.day);
+  setChangeText(monthEl, data.changes.month);
+  setChangeText(ytdEl, data.changes.ytd);
+  setChangeText(yearEl, data.changes.year);
+  windowEl.textContent = firstLabel && lastLabel
+    ? `Janela: ${formatPointDate(firstLabel.timestamp)} a ${formatPointDate(lastLabel.timestamp)}`
+    : "Janela: --";
+  sourceEl.textContent = `Fonte: ${data.exchangeName || data.marketState || "Yahoo Finance"}`;
+
+  if (chartKey === "secondary") {
+    renderSecondaryChart(filteredPoints, formatter, asset.name);
+  } else {
+    renderChart(filteredPoints, formatter, asset.name);
+  }
+}
+
+function renderSecondaryChart(points, formatter, label) {
+  const canvas = document.querySelector("#secondary-detail-chart");
+  if (!canvas || !points.length) {
+    destroySecondaryChart();
+    return;
+  }
+
+  destroySecondaryChart();
+
+  secondaryDetailChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: points.map((point) => formatPointDate(point.timestamp)),
+      datasets: [
+        {
+          label,
+          data: points.map((point) => point.close),
+          borderColor: "#ffb01f",
+          borderWidth: 2,
+          backgroundColor: "rgba(255, 176, 31, 0.10)",
+          fill: true,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          tension: 0.16
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: "index",
+          intersect: false,
+          displayColors: false,
+          callbacks: {
+            label(context) {
+              return ` ${formatter(context.parsed.y)}`;
+            }
+          }
+        }
+      },
+      interaction: {
+        intersect: false,
+        mode: "index"
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: "#8f8f8f",
+            maxTicksLimit: 8
+          },
+          grid: {
+            color: "rgba(255,255,255,0.06)"
+          }
+        },
+        y: {
+          ticks: {
+            color: "#8f8f8f",
+            callback(value) {
+              return formatter(value);
+            }
+          },
+          grid: {
+            color: "rgba(255,255,255,0.06)"
+          }
+        }
+      }
+    }
+  });
+}
+
+function destroyPrimaryChart() {
+  if (detailChart) {
+    detailChart.destroy();
+    detailChart = null;
+  }
+}
+
+function destroySecondaryChart() {
+  if (secondaryDetailChart) {
+    secondaryDetailChart.destroy();
+    secondaryDetailChart = null;
+  }
+}
+
+function destroyCharts() {
+  destroyPrimaryChart();
+  destroySecondaryChart();
 }
 
 function renderProxyBadge(asset) {
@@ -627,13 +781,6 @@ function scoreHeadline(title) {
 
   score += Math.max(0, 80 - text.length / 2);
   return score;
-}
-
-function destroyChart() {
-  if (detailChart) {
-    detailChart.destroy();
-    detailChart = null;
-  }
 }
 
 function getFilteredPoints(points, range, zoomValue) {
@@ -839,6 +986,9 @@ cardsEl.addEventListener("click", (event) => {
     return;
   }
 
+  if (symbol !== selectedSymbol) {
+    previousSelectedSymbol = selectedSymbol;
+  }
   selectedSymbol = symbol;
   renderCards(latestResults);
   renderDetail();
