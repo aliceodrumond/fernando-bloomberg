@@ -359,6 +359,14 @@ h1 {
   padding: 14px;
 }
 
+.asset-detail-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(20, 20, 20, 0.96), rgba(10, 10, 10, 0.98));
+}
+
 .hidden {
   display: none;
 }
