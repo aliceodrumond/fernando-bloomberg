@@ -644,7 +644,7 @@ function renderGames(payload) {
   const sections = [];
 
   if (Array.isArray(payload.palmeiras) && payload.palmeiras.length) {
-    sections.push(renderGamesSection("Palmeiras", payload.palmeiras));
+    sections.push(payload.palmeiras.map((game) => renderGameItem(game)).join(""));
   }
 
   if (Array.isArray(payload.brazil) && payload.brazil.length) {
