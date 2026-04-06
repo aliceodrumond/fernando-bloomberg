@@ -121,9 +121,9 @@ h1 {
 
 .clock-card {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   align-content: start;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line-soft);
   border-top: 4px solid #f0e0a0;
   background: linear-gradient(180deg, rgba(27, 27, 27, 0.98), rgba(15, 15, 15, 1));
@@ -134,13 +134,13 @@ h1 {
 }
 
 .clock-time {
-  font-size: clamp(1.45rem, 2.7vw, 2.3rem);
+  font-size: clamp(1.2rem, 2.2vw, 1.95rem);
   line-height: 1;
 }
 
 .clock-city {
   color: var(--amber);
-  font-size: 0.95rem;
+  font-size: 0.82rem;
 }
 
 .system-strip {
