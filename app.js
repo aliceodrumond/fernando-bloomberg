@@ -4,7 +4,7 @@ const DEFAULT_RANGE = "3M";
 const GROUP_ORDER = ["FX", "Rates", "Equities", "Commodities", "Brazil", "US", "Crypto"];
 
 const assets = [
-  { name: "BRL", symbol: "BRLUSD=X", group: "FX", source: "yahoo", formatter: formatUsd },
+  { name: "BRL", symbol: "USDBRL=X", group: "FX", source: "yahoo", formatter: formatBrl },
   {
     name: "DI 27",
     symbol: "DI27_PROXY",
@@ -37,7 +37,7 @@ const assets = [
     formatter: formatRate,
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2036."
   },
-  { name: "USD", symbol: "USDBRL=X", group: "FX", source: "yahoo", formatter: formatBrl },
+  { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber },
   { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo" },
   { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo" },
   { name: "ARS", symbol: "ARS=X", group: "FX", source: "yahoo" },
@@ -633,6 +633,16 @@ function formatRate(value) {
   }
 
   return `${value.toFixed(2)}%`;
+}
+
+function formatNumber(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: value > 100 ? 2 : 4
+  }).format(value);
 }
 
 function formatUsd(value) {
