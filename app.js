@@ -84,6 +84,9 @@ const detailWindowEl = document.querySelector("#detail-window");
 const zoomSliderEl = document.querySelector("#zoom-slider");
 const rangeButtonsEl = document.querySelector("#range-buttons");
 const clockCards = Array.from(document.querySelectorAll("[data-clock-zone]"));
+const newsBrazilEl = document.querySelector("#news-brazil");
+const newsUsEl = document.querySelector("#news-us");
+const newsWorldEl = document.querySelector("#news-world");
 
 let latestResults = [];
 let selectedSymbol = null;
@@ -92,15 +95,25 @@ let detailChart = null;
 
 async function loadData() {
   cardsEl.innerHTML = `<div class="loading">Atualizando watchlist...</div>`;
+  renderNewsLoading();
 
   const yahooAssets = assets.filter((asset) => asset.source !== "diProxy");
   const diAssets = assets.filter((asset) => asset.source === "diProxy");
 
-  try {
-    const payload = await fetchMarketPayload(
+  const [marketResult, newsResult] = await Promise.allSettled([
+    fetchMarketPayload(
       yahooAssets.map((asset) => asset.symbol),
       diAssets.map((asset) => asset.symbol)
-    );
+    ),
+    fetchNewsPayload()
+  ]);
+
+  try {
+    if (marketResult.status !== "fulfilled") {
+      throw marketResult.reason;
+    }
+
+    const payload = marketResult.value;
     latestResults = payload.results;
 
     const firstAvailable = latestResults.find((entry) => entry.ok)?.symbol || null;
@@ -116,6 +129,12 @@ async function loadData() {
     renderFetchError(error);
     renderDetailError(error);
     updateTimestamp(null, true);
+  }
+
+  if (newsResult.status === "fulfilled") {
+    renderNews(newsResult.value);
+  } else {
+    renderNewsError(newsResult.reason);
   }
 }
 
@@ -147,6 +166,17 @@ async function fetchMarketPayload(yahooSymbols, diSymbols) {
     asOf: marketPayload.asOf || diPayload.asOf,
     mode: "proxy-local"
   };
+}
+
+async function fetchNewsPayload() {
+  const response = await fetch("/api/news");
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Falha ao carregar noticias.");
+  }
+
+  return payload;
 }
 
 function renderCards(results) {
@@ -198,7 +228,10 @@ function renderLiveRow(asset, result) {
     return `
       <button type="button" class="table-row ${isActive ? "is-active" : ""}" data-symbol="${escapeHtml(asset.symbol)}">
         <div class="asset-cell">
-          <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+          <div class="asset-line">
+            <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+            ${renderProxyBadge(asset)}
+          </div>
           <span class="asset-symbol">${escapeHtml(asset.symbol)}</span>
         </div>
         <div class="spot-cell">--</div>
@@ -216,7 +249,10 @@ function renderLiveRow(asset, result) {
   return `
     <button type="button" class="table-row ${isActive ? "is-active" : ""}" data-symbol="${escapeHtml(asset.symbol)}">
       <div class="asset-cell">
-        <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+        <div class="asset-line">
+          <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+          ${renderProxyBadge(asset)}
+        </div>
         <span class="asset-symbol">${escapeHtml(asset.symbol)}</span>
       </div>
       <div class="spot-cell">
@@ -235,7 +271,10 @@ function renderOfflineRow(asset) {
   return `
     <button type="button" class="table-row" disabled>
       <div class="asset-cell">
-        <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+        <div class="asset-line">
+          <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+          ${renderProxyBadge(asset)}
+        </div>
         <span class="asset-symbol">${asset.source === "diProxy" ? "Proxy local" : "Ticker pendente"}</span>
       </div>
       <div class="spot-cell">--</div>
@@ -282,7 +321,12 @@ function renderDetail() {
 
   detailStatusEl.textContent = `${activeAsset.group} | ${data.exchangeName || data.marketState || "Yahoo"}`;
   detailGroupEl.textContent = activeAsset.group;
-  detailNameEl.textContent = activeAsset.name;
+  detailNameEl.innerHTML = `
+    <span class="detail-title-line">
+      <span>${escapeHtml(activeAsset.name)}</span>
+      ${renderProxyBadge(activeAsset)}
+    </span>
+  `;
   detailSymbolEl.textContent = activeAsset.symbol;
   detailPriceEl.textContent = formatter(data.regularMarketPrice);
 
@@ -378,6 +422,51 @@ function renderChart(points, formatter, label) {
       }
     }
   });
+}
+
+function renderProxyBadge(asset) {
+  if (asset.source !== "diProxy") {
+    return "";
+  }
+
+  return `<span class="proxy-badge">ANBIMA proxy</span>`;
+}
+
+function renderNewsLoading() {
+  newsBrazilEl.innerHTML = `<div class="news-empty">Carregando notícias do Brasil...</div>`;
+  newsUsEl.innerHTML = `<div class="news-empty">Carregando notícias dos EUA...</div>`;
+  newsWorldEl.innerHTML = `<div class="news-empty">Carregando notícias do mundo...</div>`;
+}
+
+function renderNews(payload) {
+  renderNewsColumn(newsBrazilEl, payload.brazil || [], "Sem notícias do Brasil agora.");
+  renderNewsColumn(newsUsEl, payload.us || [], "Sem notícias dos EUA agora.");
+  renderNewsColumn(newsWorldEl, payload.world || [], "Sem notícias globais agora.");
+}
+
+function renderNewsError(error) {
+  const message = escapeHtml(error?.message || "Falha ao carregar notícias.");
+  newsBrazilEl.innerHTML = `<div class="news-empty">${message}</div>`;
+  newsUsEl.innerHTML = `<div class="news-empty">${message}</div>`;
+  newsWorldEl.innerHTML = `<div class="news-empty">${message}</div>`;
+}
+
+function renderNewsColumn(element, items, emptyText) {
+  if (!items.length) {
+    element.innerHTML = `<div class="news-empty">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+
+  element.innerHTML = items
+    .map(
+      (item) => `
+        <article class="news-item">
+          <a href="${escapeHtml(item.link)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>
+          <span class="news-source">${escapeHtml(item.source || "News")} | ${escapeHtml(item.published || "")}</span>
+        </article>
+      `
+    )
+    .join("");
 }
 
 function destroyChart() {

@@ -22,6 +22,12 @@ const YAHOO_HEADERS = {
   Accept: "application/json"
 };
 
+const NEWS_FEEDS = {
+  brazil: "https://news.google.com/rss/search?q=Brasil+economia+mercados&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+  us: "https://news.google.com/rss/search?q=US+markets+economy+fed&hl=en-US&gl=US&ceid=US:en",
+  world: "https://news.google.com/rss/search?q=world+war+geopolitics+markets&hl=en-US&gl=US&ceid=US:en"
+};
+
 const DI_TARGETS = {
   DI27_PROXY: { label: "DI 27", year: 2027 },
   DI28_PROXY: { label: "DI 28", year: 2028 },
@@ -302,6 +308,51 @@ async function fetchDiProxy(symbols) {
   });
 }
 
+function decodeXml(value) {
+  return String(value)
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'");
+}
+
+function parseNewsItems(xml) {
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+    .slice(0, 6)
+    .map((match) => {
+      const chunk = match[1];
+      const title = chunk.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/);
+      const link = chunk.match(/<link>(.*?)<\/link>/);
+      const published = chunk.match(/<pubDate>(.*?)<\/pubDate>/);
+      const source = chunk.match(/<source[^>]*>(.*?)<\/source>/);
+
+      return {
+        title: decodeXml(title?.[1] || title?.[2] || ""),
+        link: decodeXml(link?.[1] || ""),
+        published: decodeXml(published?.[1] || ""),
+        source: decodeXml(source?.[1] || "")
+      };
+    })
+    .filter((item) => item.title && item.link);
+}
+
+async function fetchNewsFeed(url) {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "application/rss+xml,application/xml,text/xml"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Feed respondeu com status ${response.status}.`);
+  }
+
+  const xml = await response.text();
+  return parseNewsItems(xml);
+}
+
 async function handleMarketApi(requestUrl, response) {
   const symbolsParam = requestUrl.searchParams.get("symbols");
 
@@ -350,6 +401,21 @@ async function handleDiProxyApi(requestUrl, response) {
   sendJson(response, 200, { results, asOf: new Date().toISOString() });
 }
 
+async function handleNewsApi(response) {
+  const [brazil, us, world] = await Promise.all([
+    fetchNewsFeed(NEWS_FEEDS.brazil),
+    fetchNewsFeed(NEWS_FEEDS.us),
+    fetchNewsFeed(NEWS_FEEDS.world)
+  ]);
+
+  sendJson(response, 200, {
+    brazil,
+    us,
+    world,
+    asOf: new Date().toISOString()
+  });
+}
+
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
@@ -367,6 +433,17 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/api/di-proxy") {
     try {
       await handleDiProxyApi(requestUrl, response);
+    } catch (error) {
+      sendJson(response, 500, {
+        error: error instanceof Error ? error.message : "Falha inesperada."
+      });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/news") {
+    try {
+      await handleNewsApi(response);
     } catch (error) {
       sendJson(response, 500, {
         error: error instanceof Error ? error.message : "Falha inesperada."

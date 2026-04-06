@@ -27,6 +27,12 @@ $DiTargets = @{
   "DI36_PROXY" = @{ Label = "DI 36"; Year = 2036 }
 }
 
+$NewsFeeds = @{
+  brazil = "https://news.google.com/rss/search?q=Brasil+economia+mercados&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+  us = "https://news.google.com/rss/search?q=US+markets+economy+fed&hl=en-US&gl=US&ceid=US:en"
+  world = "https://news.google.com/rss/search?q=world+war+geopolitics+markets&hl=en-US&gl=US&ceid=US:en"
+}
+
 function Send-Json {
   param(
     [Parameter(Mandatory = $true)] $Response,
@@ -309,6 +315,32 @@ function Get-AnbimaDiProxy {
   return $results
 }
 
+function Get-NewsFeedItems {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Url
+  )
+
+  $response = Invoke-WebRequest -Uri $Url -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
+  $xml = [xml]$response.Content
+  $items = @()
+
+  foreach ($item in @($xml.rss.channel.item) | Select-Object -First 6) {
+    $source = ""
+    if ($item.source) {
+      $source = [string]$item.source.'#text'
+    }
+
+    $items += @{
+      title = [string]$item.title
+      link = [string]$item.link
+      published = [string]$item.pubDate
+      source = $source
+    }
+  }
+
+  return $items
+}
+
 try {
   while ($listener.IsListening) {
     $context = $listener.GetContext()
@@ -317,6 +349,16 @@ try {
 
     try {
       $path = $request.Url.AbsolutePath
+
+      if ($path -eq "/api/news") {
+        Send-Json -Response $response -StatusCode 200 -Payload @{
+          brazil = Get-NewsFeedItems -Url $NewsFeeds.brazil
+          us = Get-NewsFeedItems -Url $NewsFeeds.us
+          world = Get-NewsFeedItems -Url $NewsFeeds.world
+          asOf = [DateTime]::UtcNow.ToString("o")
+        }
+        continue
+      }
 
       if ($path -eq "/api/di-proxy") {
         $symbolsParam = $request.QueryString["symbols"]
