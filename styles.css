@@ -554,6 +554,17 @@ h1 {
   min-height: 160px;
 }
 
+.headline-top-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.headline-column {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #121212, #0b0b0b);
+}
+
 .headline-item {
   padding: 7px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -720,6 +731,10 @@ h1 {
 
   .top-right-column {
     grid-template-rows: auto auto;
+  }
+
+  .headline-top-grid {
+    grid-template-columns: 1fr;
   }
 
   .clock-strip {

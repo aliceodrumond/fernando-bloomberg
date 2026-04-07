@@ -88,7 +88,8 @@ const clockCards = Array.from(document.querySelectorAll("[data-clock-zone]"));
 const newsBrazilEl = document.querySelector("#news-brazil");
 const newsUsEl = document.querySelector("#news-us");
 const newsWorldEl = document.querySelector("#news-world");
-const topHeadlinesEl = document.querySelector("#top-headlines");
+const topBreakingEl = document.querySelector("#top-breaking");
+const topMacroEl = document.querySelector("#top-macro");
 const gamesBoxEl = document.querySelector("#games-box");
 const gamesStatusEl = document.querySelector("#games-status");
 const secondaryDetailPanelEl = document.querySelector("#secondary-detail-panel");
@@ -614,7 +615,8 @@ function renderProxyBadge(asset) {
 }
 
 function renderNewsLoading() {
-  topHeadlinesEl.innerHTML = `<div class="news-empty">Carregando manchetes relevantes...</div>`;
+  topBreakingEl.innerHTML = `<div class="news-empty">Carregando breaking news...</div>`;
+  topMacroEl.innerHTML = `<div class="news-empty">Carregando manchetes macro...</div>`;
   newsBrazilEl.innerHTML = `<div class="news-empty">Carregando notícias do Brasil...</div>`;
   newsUsEl.innerHTML = `<div class="news-empty">Carregando notícias dos EUA...</div>`;
   newsWorldEl.innerHTML = `<div class="news-empty">Carregando notícias do mundo...</div>`;
@@ -634,7 +636,8 @@ function renderNews(payload) {
 
 function renderNewsError(error) {
   const message = escapeHtml(error?.message || "Falha ao carregar notícias.");
-  topHeadlinesEl.innerHTML = `<div class="news-empty">${message}</div>`;
+  topBreakingEl.innerHTML = `<div class="news-empty">${message}</div>`;
+  topMacroEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsBrazilEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsUsEl.innerHTML = `<div class="news-empty">${message}</div>`;
   newsWorldEl.innerHTML = `<div class="news-empty">${message}</div>`;
@@ -727,17 +730,33 @@ function renderNewsColumn(element, items, emptyText) {
 
 function renderTopHeadlines(payload) {
   const mixed = [...(payload.brazil || []), ...(payload.world || [])];
-  const ranked = mixed
-    .map((item) => ({ ...item, score: scoreHeadline(item.title, item.published) }))
-    .sort((a, b) => b.score - a.score)
+  const enriched = mixed.map((item) => ({
+    ...item,
+    breakingScore: scoreHeadline(item.title, item.published, "breaking"),
+    macroScore: scoreHeadline(item.title, item.published, "macro")
+  }));
+
+  const breaking = enriched
+    .filter((item) => item.breakingScore > 0)
+    .sort((a, b) => b.breakingScore - a.breakingScore)
     .slice(0, 3);
 
-  if (!ranked.length) {
-    topHeadlinesEl.innerHTML = `<div class="news-empty">Sem manchetes relevantes agora.</div>`;
-    return;
-  }
+  const macro = enriched
+    .filter((item) => item.macroScore > 0)
+    .sort((a, b) => b.macroScore - a.macroScore)
+    .slice(0, 3);
 
-  topHeadlinesEl.innerHTML = ranked
+  topBreakingEl.innerHTML = breaking.length
+    ? renderHeadlineItems(breaking)
+    : `<div class="news-empty">Sem breaking news agora.</div>`;
+
+  topMacroEl.innerHTML = macro.length
+    ? renderHeadlineItems(macro)
+    : `<div class="news-empty">Sem manchetes macro agora.</div>`;
+}
+
+function renderHeadlineItems(items) {
+  return items
     .map(
       (item) => `
         <article class="headline-item">
@@ -749,17 +768,28 @@ function renderTopHeadlines(payload) {
     .join("");
 }
 
-function scoreHeadline(title, published) {
+function scoreHeadline(title, published, mode = "macro") {
   const text = String(title || "").toLowerCase();
   let score = 0;
 
-  const priorityTerms = [
+  const breakingTerms = [
     "war",
     "guerra",
     "trump",
-    "fed",
+    "attack",
+    "ataque",
+    "missile",
+    "bomb",
+    "sanction",
+    "strike",
+    "ceasefire",
     "tariff",
     "tarifa",
+    "breaking"
+  ];
+
+  const macroTerms = [
+    "fed",
     "china",
     "inflation",
     "inflação",
@@ -772,16 +802,23 @@ function scoreHeadline(title, published) {
     "oil",
     "petróleo",
     "brazil",
-    "brasil",
-    "sanction",
-    "attack",
-    "ataque"
+    "brasil"
   ];
 
-  for (const term of priorityTerms) {
+  const terms = mode === "breaking" ? breakingTerms : macroTerms;
+
+  for (const term of terms) {
     if (text.includes(term)) {
-      score += 10;
+      score += mode === "breaking" ? 14 : 10;
     }
+  }
+
+  if (mode === "breaking" && !breakingTerms.some((term) => text.includes(term))) {
+    score -= 15;
+  }
+
+  if (mode === "macro" && !macroTerms.some((term) => text.includes(term))) {
+    score -= 10;
   }
 
   score += Math.max(0, 80 - text.length / 2);
