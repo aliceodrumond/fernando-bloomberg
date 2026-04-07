@@ -558,6 +558,10 @@ h1 {
   overflow-y: auto;
 }
 
+#top-macro {
+  overflow-y: auto;
+}
+
 .headline-top-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
