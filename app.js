@@ -728,7 +728,7 @@ function renderNewsColumn(element, items, emptyText) {
 function renderTopHeadlines(payload) {
   const mixed = [...(payload.brazil || []), ...(payload.world || [])];
   const ranked = mixed
-    .map((item) => ({ ...item, score: scoreHeadline(item.title) }))
+    .map((item) => ({ ...item, score: scoreHeadline(item.title, item.published) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
@@ -749,7 +749,7 @@ function renderTopHeadlines(payload) {
     .join("");
 }
 
-function scoreHeadline(title) {
+function scoreHeadline(title, published) {
   const text = String(title || "").toLowerCase();
   let score = 0;
 
@@ -785,6 +785,23 @@ function scoreHeadline(title) {
   }
 
   score += Math.max(0, 80 - text.length / 2);
+
+  const publishedMs = Date.parse(published || "");
+  if (Number.isFinite(publishedMs)) {
+    const ageHours = (Date.now() - publishedMs) / (1000 * 60 * 60);
+    if (ageHours <= 6) {
+      score += 35;
+    } else if (ageHours <= 12) {
+      score += 24;
+    } else if (ageHours <= 24) {
+      score += 14;
+    } else if (ageHours <= 48) {
+      score += 6;
+    } else {
+      score -= Math.min(30, ageHours / 6);
+    }
+  }
+
   return score;
 }
 

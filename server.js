@@ -23,9 +23,9 @@ const YAHOO_HEADERS = {
 };
 
 const NEWS_FEEDS = {
-  brazil: "https://news.google.com/rss/search?q=Brasil+economia+mercados&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-  us: "https://news.google.com/rss/search?q=US+markets+economy+fed&hl=en-US&gl=US&ceid=US:en",
-  world: "https://news.google.com/rss/search?q=world+war+geopolitics+markets&hl=en-US&gl=US&ceid=US:en"
+  brazil: "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflation+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+  us: "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+  world: "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en"
 };
 
 const PALMEIRAS_API_ROOT = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/";
@@ -449,7 +449,8 @@ function parseNewsItems(xml) {
         source: decodeXml(source?.[1] || "")
       };
     })
-    .filter((item) => item.title && item.link);
+    .filter((item) => item.title && item.link)
+    .sort((a, b) => Date.parse(b.published || "") - Date.parse(a.published || ""));
 }
 
 async function fetchNewsFeed(url) {

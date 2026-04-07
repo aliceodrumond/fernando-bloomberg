@@ -28,9 +28,9 @@ $DiTargets = @{
 }
 
 $NewsFeeds = @{
-  brazil = "https://news.google.com/rss/search?q=Brasil+economia+mercados&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-  us = "https://news.google.com/rss/search?q=US+markets+economy+fed&hl=en-US&gl=US&ceid=US:en"
-  world = "https://news.google.com/rss/search?q=world+war+geopolitics+markets&hl=en-US&gl=US&ceid=US:en"
+  brazil = "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+  us = "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en"
+  world = "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en"
 }
 
 $PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/"
@@ -353,7 +353,9 @@ function Get-NewsFeedItems {
     }
   }
 
-  return $items
+  return @($items | Sort-Object {
+    try { [DateTime]::Parse($_.published) } catch { [DateTime]::MinValue }
+  } -Descending)
 }
 
 function Normalize-Text {
