@@ -283,13 +283,14 @@ function renderCards(results) {
 
 function renderLiveRow(asset, result) {
   const isActive = asset.symbol === selectedSymbol;
+  const displayName = result?.data?.shortName || asset.name;
 
   if (!result || !result.ok) {
     return `
       <button type="button" class="table-row ${isActive ? "is-active" : ""}" data-symbol="${escapeHtml(asset.symbol)}">
         <div class="asset-cell">
           <div class="asset-line">
-            <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+            <strong class="asset-name">${escapeHtml(displayName)}</strong>
             ${renderProxyBadge(asset)}
           </div>
           <span class="asset-symbol">${escapeHtml(asset.symbol)}</span>
@@ -310,7 +311,7 @@ function renderLiveRow(asset, result) {
     <button type="button" class="table-row ${isActive ? "is-active" : ""}" data-symbol="${escapeHtml(asset.symbol)}">
       <div class="asset-cell">
         <div class="asset-line">
-          <strong class="asset-name">${escapeHtml(asset.name)}</strong>
+          <strong class="asset-name">${escapeHtml(displayName)}</strong>
           ${renderProxyBadge(asset)}
         </div>
         <span class="asset-symbol">${escapeHtml(asset.symbol)}</span>
@@ -506,11 +507,12 @@ function renderDetailPanel(config) {
   const filteredPoints = getFilteredPoints(data.points || [], selectedRange, Number(zoomSliderEl.value));
   const firstLabel = filteredPoints[0];
   const lastLabel = filteredPoints[filteredPoints.length - 1];
+  const displayName = data.shortName || asset.name;
 
   groupEl.textContent = asset.group;
   nameEl.innerHTML = `
     <span class="detail-title-line">
-      <span>${escapeHtml(asset.name)}</span>
+      <span>${escapeHtml(displayName)}</span>
       ${renderProxyBadge(asset)}
     </span>
   `;
@@ -526,9 +528,9 @@ function renderDetailPanel(config) {
   sourceEl.textContent = `Fonte: ${data.exchangeName || data.marketState || "Yahoo Finance"}`;
 
   if (chartKey === "secondary") {
-    renderSecondaryChart(filteredPoints, formatter, asset.name);
+    renderSecondaryChart(filteredPoints, formatter, displayName);
   } else {
-    renderChart(filteredPoints, formatter, asset.name);
+    renderChart(filteredPoints, formatter, displayName);
   }
 }
 

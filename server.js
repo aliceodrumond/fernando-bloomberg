@@ -286,6 +286,7 @@ async function fetchTesouroPrefixado() {
     symbol: "TESOURO_PREFIXADO",
     currency: "%",
     exchangeName: `Tesouro Prefixado ${selected.vencimentoRaw}`,
+    shortName: `Tesouro Prefixado ${selected.vencimentoRaw}`,
     marketState: "Tesouro Transparente",
     regularMarketPrice: currentPrice,
     regularMarketTime: currentTimestamp,
