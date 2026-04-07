@@ -37,6 +37,14 @@ const assets = [
     formatter: formatRate,
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2036."
   },
+  {
+    name: "Tesouro Prefixado",
+    symbol: "TESOURO_PREFIXADO",
+    group: "Rates",
+    source: "tesouro",
+    formatter: formatRate,
+    note: "Taxa oficial diária do Tesouro Transparente para o prefixado mais curto disponível."
+  },
   { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber },
   { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo" },
   { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo" },
@@ -119,11 +127,13 @@ async function loadData() {
 
   const yahooAssets = assets.filter((asset) => asset.source !== "diProxy");
   const diAssets = assets.filter((asset) => asset.source === "diProxy");
+  const tesouroAssets = assets.filter((asset) => asset.source === "tesouro");
 
   const [marketResult, newsResult, gamesResult] = await Promise.allSettled([
     fetchMarketPayload(
-      yahooAssets.map((asset) => asset.symbol),
-      diAssets.map((asset) => asset.symbol)
+      yahooAssets.filter((asset) => asset.source === "yahoo").map((asset) => asset.symbol),
+      diAssets.map((asset) => asset.symbol),
+      tesouroAssets.map((asset) => asset.symbol)
     ),
     fetchNewsPayload(),
     fetchGamesPayload()
@@ -168,7 +178,7 @@ async function loadData() {
   }
 }
 
-async function fetchMarketPayload(yahooSymbols, diSymbols) {
+async function fetchMarketPayload(yahooSymbols, diSymbols, tesouroSymbols) {
   if (window.location.protocol === "file:") {
     throw new Error(
       "Abra a pagina pelo arquivo 'Abrir Pulse Terminal.bat' para iniciar o servidor local automaticamente."
@@ -177,11 +187,16 @@ async function fetchMarketPayload(yahooSymbols, diSymbols) {
 
   const requests = [
     fetch(`/api/market?symbols=${encodeURIComponent(yahooSymbols.join(","))}`),
-    fetch(`/api/di-proxy?symbols=${encodeURIComponent(diSymbols.join(","))}`)
+    fetch(`/api/di-proxy?symbols=${encodeURIComponent(diSymbols.join(","))}`),
+    fetch(`/api/tesouro?symbols=${encodeURIComponent(tesouroSymbols.join(","))}`)
   ];
 
-  const [marketResponse, diResponse] = await Promise.all(requests);
-  const [marketPayload, diPayload] = await Promise.all([marketResponse.json(), diResponse.json()]);
+  const [marketResponse, diResponse, tesouroResponse] = await Promise.all(requests);
+  const [marketPayload, diPayload, tesouroPayload] = await Promise.all([
+    marketResponse.json(),
+    diResponse.json(),
+    tesouroResponse.json()
+  ]);
 
   if (!marketResponse.ok) {
     throw new Error(marketPayload.error || "Falha ao consultar a API local.");
@@ -191,9 +206,13 @@ async function fetchMarketPayload(yahooSymbols, diSymbols) {
     throw new Error(diPayload.error || "Falha ao consultar a curva local dos DIs.");
   }
 
+  if (!tesouroResponse.ok) {
+    throw new Error(tesouroPayload.error || "Falha ao consultar as taxas do Tesouro.");
+  }
+
   return {
-    results: [...marketPayload.results, ...diPayload.results],
-    asOf: marketPayload.asOf || diPayload.asOf,
+    results: [...marketPayload.results, ...diPayload.results, ...tesouroPayload.results],
+    asOf: marketPayload.asOf || diPayload.asOf || tesouroPayload.asOf,
     mode: "proxy-local"
   };
 }

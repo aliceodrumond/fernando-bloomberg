@@ -36,6 +36,7 @@ $NewsFeeds = @{
 $PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/"
 $PalmeirasCalendarUrl = "https://www.palmeiras.com.br/calendario/"
 $FifaGamesUrl = "https://fifaworldcup26.suites.fifa.com/games/"
+$TesouroCsvUrl = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
 $PalmeirasCityMap = @{
   "allianz parque" = "São Paulo"
   "arena crefisa barueri" = "Barueri"
@@ -120,6 +121,33 @@ function Get-PercentChange {
   return (($Current / $Reference) - 1) * 100
 }
 
+function ConvertFrom-PtBrNumber {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Value
+  )
+
+  $normalized = [string]$Value -replace "\.", "" -replace ",", "."
+  $parsed = 0.0
+  if ([double]::TryParse($normalized, [ref]$parsed)) {
+    return $parsed
+  }
+
+  return $null
+}
+
+function ConvertFrom-PtBrDate {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Value
+  )
+
+  try {
+    return [datetime]::ParseExact($Value, "dd/MM/yyyy", $null)
+  }
+  catch {
+    return $null
+  }
+}
+
 function Get-YahooChart {
   param(
     [Parameter(Mandatory = $true)] [string] $Symbol
@@ -192,6 +220,94 @@ function Get-YahooChart {
     points = $series
     changes = @{
       day = if ($oneDayReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneDayReference.close) } elseif ($null -ne $meta.previousClose) { Get-PercentChange -Current $currentPrice -Reference ([double]$meta.previousClose) } else { $null }
+      month = if ($oneMonthReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneMonthReference.close) } else { $null }
+      ytd = if ($ytdReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$ytdReference.close) } else { $null }
+      year = if ($oneYearReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneYearReference.close) } else { $null }
+    }
+  }
+}
+
+function Get-TesouroPrefixado {
+  $response = Invoke-WebRequest -Uri $TesouroCsvUrl -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
+  $lines = @($response.Content -split "`r?`n" | Where-Object { $_.Trim() })
+  if ($lines.Count -lt 2) {
+    throw "Arquivo do Tesouro veio vazio."
+  }
+
+  $rows = @()
+  foreach ($line in $lines[1..($lines.Count - 1)]) {
+    $parts = $line.Split(";")
+    if ($parts.Count -lt 8) {
+      continue
+    }
+
+    $tipo = [string]$parts[0]
+    $vencimentoRaw = [string]$parts[1]
+    $dataBaseRaw = [string]$parts[2]
+    $taxaCompra = ConvertFrom-PtBrNumber -Value ([string]$parts[3])
+    $vencimento = ConvertFrom-PtBrDate -Value $vencimentoRaw
+    $dataBase = ConvertFrom-PtBrDate -Value $dataBaseRaw
+
+    if ($tipo -ne "Tesouro Prefixado" -or $null -eq $vencimento -or $null -eq $dataBase -or $null -eq $taxaCompra) {
+      continue
+    }
+
+    $rows += @{
+      tipo = $tipo
+      vencimentoRaw = $vencimentoRaw
+      dataBaseRaw = $dataBaseRaw
+      taxaCompra = [double]$taxaCompra
+      vencimento = $vencimento
+      dataBase = $dataBase
+    }
+  }
+
+  if ($rows.Count -eq 0) {
+    throw "Sem dados de Tesouro Prefixado no arquivo oficial."
+  }
+
+  $latestBaseDate = ($rows | Sort-Object dataBase -Descending | Select-Object -First 1).dataBase
+  $currentCandidates = @(
+    $rows |
+      Where-Object { $_.dataBase -eq $latestBaseDate -and $_.vencimento -gt $latestBaseDate } |
+      Sort-Object vencimento
+  )
+
+  if ($currentCandidates.Count -eq 0) {
+    throw "Nao foi possivel localizar um Tesouro Prefixado vigente na data-base atual."
+  }
+
+  $selected = $currentCandidates[0]
+  $series = @(
+    $rows |
+      Where-Object { $_.vencimentoRaw -eq $selected.vencimentoRaw } |
+      Sort-Object dataBase |
+      ForEach-Object {
+        @{
+          timestamp = [Math]::Floor(([DateTimeOffset]$_.dataBase).ToUnixTimeSeconds())
+          close = [double]$_.taxaCompra
+        }
+      }
+  )
+
+  $currentPrice = [double]$selected.taxaCompra
+  $currentTimestamp = [Math]::Floor(([DateTimeOffset]$latestBaseDate).ToUnixTimeSeconds())
+  $oneDayReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 2 * 24 * 60 * 60)
+  $oneMonthReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 31 * 24 * 60 * 60)
+  $oneYearReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 366 * 24 * 60 * 60)
+  $ytdStart = [Math]::Floor(([DateTimeOffset]::new([datetime]::new($latestBaseDate.Year, 1, 1, 0, 0, 0, [DateTimeKind]::Unspecified))).ToUnixTimeSeconds())
+  $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $ytdStart
+
+  return @{
+    symbol = "TESOURO_PREFIXADO"
+    currency = "%"
+    exchangeName = "Tesouro Prefixado $($selected.vencimentoRaw)"
+    marketState = "Tesouro Transparente"
+    regularMarketPrice = $currentPrice
+    regularMarketTime = $currentTimestamp
+    points = $series
+    changes = @{
+      day = if ($oneDayReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneDayReference.close) } else { $null }
       month = if ($oneMonthReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneMonthReference.close) } else { $null }
       ytd = if ($ytdReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$ytdReference.close) } else { $null }
       year = if ($oneYearReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneYearReference.close) } else { $null }
@@ -646,6 +762,38 @@ try {
 
         $symbols = $symbolsParam.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
         $results = Get-AnbimaDiProxy -Symbols $symbols
+        Send-Json -Response $response -StatusCode 200 -Payload @{
+          results = $results
+          asOf = [DateTime]::UtcNow.ToString("o")
+        }
+        continue
+      }
+
+      if ($path -eq "/api/tesouro") {
+        $symbolsParam = $request.QueryString["symbols"]
+        if (-not $symbolsParam) {
+          Send-Json -Response $response -StatusCode 400 -Payload @{ error = "Informe ao menos um simbolo do Tesouro." }
+          continue
+        }
+
+        $symbols = $symbolsParam.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        $results = @()
+
+        foreach ($symbol in $symbols) {
+          if ($symbol -ne "TESOURO_PREFIXADO") {
+            $results += @{ ok = $false; symbol = $symbol; error = "Ativo do Tesouro nao configurado." }
+            continue
+          }
+
+          try {
+            $data = Get-TesouroPrefixado
+            $results += @{ ok = $true; symbol = $symbol; data = $data }
+          }
+          catch {
+            $results += @{ ok = $false; symbol = $symbol; error = $_.Exception.Message }
+          }
+        }
+
         Send-Json -Response $response -StatusCode 200 -Payload @{
           results = $results
           asOf = [DateTime]::UtcNow.ToString("o")
