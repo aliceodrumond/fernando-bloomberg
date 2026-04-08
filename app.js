@@ -4,7 +4,7 @@ const DEFAULT_RANGE = "3M";
 const GROUP_ORDER = ["FX", "Rates", "Equities", "Commodities", "Brazil", "US", "Crypto"];
 
 const assets = [
-  { name: "BRL", symbol: "USDBRL=X", group: "FX", source: "yahoo", formatter: formatBrl },
+  { name: "BRL", symbol: "USDBRL=X", group: "FX", source: "yahoo", formatter: formatBrl, invertChangeColors: true },
   {
     name: "DI 27",
     symbol: "DI27_PROXY",
@@ -45,9 +45,9 @@ const assets = [
     formatter: formatRate,
     note: "Taxa oficial diária do Tesouro Transparente para o prefixado mais curto disponível."
   },
-  { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber },
-  { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo" },
-  { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo" },
+  { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber, invertChangeColors: true },
+  { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo", invertChangeColors: true },
+  { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo", invertChangeColors: true },
   { name: "ARS", symbol: "ARS=X", group: "FX", source: "yahoo" },
   { name: "EUR", symbol: "EURUSD=X", group: "FX", source: "yahoo", formatter: formatUsd },
   { name: "EURBRL", symbol: "EURBRL=X", group: "FX", source: "yahoo", formatter: formatBrl },
@@ -320,10 +320,10 @@ function renderLiveRow(asset, result) {
         ${priceFormatter(result.data.regularMarketPrice)}
         <span class="meta">${escapeHtml(result.data.currency || result.data.exchangeName || "Yahoo")}</span>
       </div>
-      ${renderChangeCell(result.data.changes.day)}
-      ${renderChangeCell(result.data.changes.month)}
-      ${renderChangeCell(result.data.changes.ytd)}
-      ${renderChangeCell(result.data.changes.year)}
+      ${renderChangeCell(result.data.changes.day, asset)}
+      ${renderChangeCell(result.data.changes.month, asset)}
+      ${renderChangeCell(result.data.changes.ytd, asset)}
+      ${renderChangeCell(result.data.changes.year, asset)}
     </button>
   `;
 }
@@ -518,10 +518,10 @@ function renderDetailPanel(config) {
   `;
   symbolEl.textContent = asset.symbol;
   priceEl.textContent = formatter(data.regularMarketPrice);
-  setChangeText(dayEl, data.changes.day);
-  setChangeText(monthEl, data.changes.month);
-  setChangeText(ytdEl, data.changes.ytd);
-  setChangeText(yearEl, data.changes.year);
+  setChangeText(dayEl, data.changes.day, asset);
+  setChangeText(monthEl, data.changes.month, asset);
+  setChangeText(ytdEl, data.changes.ytd, asset);
+  setChangeText(yearEl, data.changes.year, asset);
   windowEl.textContent = firstLabel && lastLabel
     ? `Janela: ${formatPointDate(firstLabel.timestamp)} a ${formatPointDate(lastLabel.timestamp)}`
     : "Janela: --";
@@ -903,14 +903,14 @@ function applyRange(points, range) {
   return points;
 }
 
-function renderChangeCell(value) {
-  const state = getChangeState(value);
+function renderChangeCell(value, asset) {
+  const state = getChangeState(value, asset);
   const content = Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}%` : "--";
   return `<div class="change-value ${state}">${content}</div>`;
 }
 
-function setChangeText(element, value) {
-  const state = getChangeState(value);
+function setChangeText(element, value, asset) {
+  const state = getChangeState(value, asset);
   const content = Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}%` : "--";
   element.textContent = content;
   element.className = state;
@@ -1005,17 +1005,19 @@ function formatCurrency(value, currency) {
   }
 }
 
-function getChangeState(value) {
+function getChangeState(value, asset) {
   if (!Number.isFinite(value)) {
     return "neutral";
   }
 
+  const isInverted = Boolean(asset?.invertChangeColors);
+
   if (value > 0) {
-    return "positive";
+    return isInverted ? "negative" : "positive";
   }
 
   if (value < 0) {
-    return "negative";
+    return isInverted ? "positive" : "negative";
   }
 
   return "neutral";
