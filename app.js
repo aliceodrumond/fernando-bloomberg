@@ -43,7 +43,8 @@ const assets = [
   },
   {
     name: "Tesouro Prefixado",
-    symbol: "TESOURO_PREFIXADO",
+    symbol: "TESOURO_PREFIXADO_HIDDEN",
+    hidden: true,
     group: "Rates",
     source: "tesouro",
     formatter: formatRate,
@@ -134,9 +135,10 @@ async function loadData() {
   renderNewsLoading();
   renderGamesLoading();
 
-  const yahooAssets = assets.filter((asset) => asset.source !== "diProxy");
-  const diAssets = assets.filter((asset) => asset.source === "diProxy");
-  const tesouroAssets = assets.filter((asset) => asset.source === "tesouro");
+  const visibleAssets = assets.filter((asset) => !asset.hidden);
+  const yahooAssets = visibleAssets.filter((asset) => asset.source !== "diProxy");
+  const diAssets = visibleAssets.filter((asset) => asset.source === "diProxy");
+  const tesouroAssets = visibleAssets.filter((asset) => asset.source === "tesouro");
 
   const [marketResult, newsResult, gamesResult] = await Promise.allSettled([
     fetchMarketPayload(
@@ -264,7 +266,7 @@ function renderCards(results) {
   ];
 
   for (const groupName of GROUP_ORDER) {
-    const groupAssets = assets.filter((asset) => asset.group === groupName);
+    const groupAssets = assets.filter((asset) => asset.group === groupName && !asset.hidden);
     if (!groupAssets.length) {
       continue;
     }
@@ -369,7 +371,7 @@ function renderFetchError(error) {
 }
 
 function renderDetail() {
-  const activeAsset = assets.find((asset) => asset.symbol === selectedSymbol);
+  const activeAsset = assets.find((asset) => asset.symbol === selectedSymbol && !asset.hidden);
   const activeResult = latestResults.find((entry) => entry.symbol === selectedSymbol && entry.ok);
 
   if (!activeAsset || !activeResult) {
@@ -401,7 +403,7 @@ function renderDetail() {
   });
 
   const secondarySymbol = selectionHistory.length > 1 ? selectionHistory[selectionHistory.length - 2] : null;
-  const secondaryAsset = assets.find((asset) => asset.symbol === secondarySymbol);
+  const secondaryAsset = assets.find((asset) => asset.symbol === secondarySymbol && !asset.hidden);
   const secondaryResult = latestResults.find((entry) => entry.symbol === secondarySymbol && entry.ok);
 
   if (secondaryAsset && secondaryResult && secondarySymbol !== selectedSymbol) {
