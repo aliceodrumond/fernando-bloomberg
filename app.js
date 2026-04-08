@@ -48,7 +48,7 @@ const assets = [
   { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber, invertChangeColors: true },
   { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo", invertChangeColors: true },
   { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo", invertChangeColors: true },
-  { name: "ARS", symbol: "ARS=X", group: "FX", source: "yahoo" },
+  { name: "ARS", symbol: "ARS=X", group: "FX", source: "yahoo", invertChangeColors: true },
   { name: "EUR", symbol: "EURUSD=X", group: "FX", source: "yahoo", formatter: formatUsd },
   { name: "EURBRL", symbol: "EURBRL=X", group: "FX", source: "yahoo", formatter: formatBrl },
   { name: "IBOVESPA", symbol: "^BVSP", group: "Equities", source: "yahoo", formatter: formatBrl },
