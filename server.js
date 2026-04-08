@@ -38,6 +38,14 @@ const US_TREASURY_CONFIG = {
   UST_10Y: { column: "10 Yr", name: "UST 10y" },
   UST_30Y: { column: "30 Yr", name: "UST 30y" }
 };
+const BR_TESOURO_CONFIG = {
+  TESOURO_PREFIXADO: { tipo: "Tesouro Prefixado", vencimentoRaw: null, name: "Tesouro Prefixado" },
+  NTNB_2029: { tipo: "Tesouro IPCA+", vencimentoRaw: "15/05/2029", name: "NTN-B 2029" },
+  NTNB_2035: { tipo: "Tesouro IPCA+", vencimentoRaw: "15/05/2035", name: "NTN-B 2035" },
+  NTNB_2045: { tipo: "Tesouro IPCA+", vencimentoRaw: "15/05/2045", name: "NTN-B 2045" },
+  NTNB_JS_2035: { tipo: "Tesouro IPCA+ com Juros Semestrais", vencimentoRaw: "15/05/2035", name: "NTN-B JS 2035" },
+  NTNB_JS_2055: { tipo: "Tesouro IPCA+ com Juros Semestrais", vencimentoRaw: "15/05/2055", name: "NTN-B JS 2055" }
+};
 
 const PALMEIRAS_CITY_MAP = new Map([
   ["allianz parque", "São Paulo"],
@@ -243,7 +251,7 @@ async function fetchYahooChart(symbol, range = "1y", interval = "1d") {
   };
 }
 
-async function fetchTesouroPrefixado() {
+async function fetchTesouroBrazilRows() {
   const response = await fetch(TESOURO_CSV_URL, {
     headers: {
       "User-Agent": "Mozilla/5.0",
@@ -259,7 +267,7 @@ async function fetchTesouroPrefixado() {
   const lines = csv.split(/\r?\n/).filter(Boolean);
   lines.shift();
 
-  const rows = lines
+  return lines
     .map((line) => line.split(";"))
     .filter((parts) => parts.length >= 8)
     .map((parts) => ({
@@ -270,24 +278,40 @@ async function fetchTesouroPrefixado() {
       vencimento: parsePtBrDate(parts[1]),
       dataBase: parsePtBrDate(parts[2])
     }))
-    .filter((row) => row.tipo === "Tesouro Prefixado" && row.vencimento && row.dataBase && Number.isFinite(row.taxaCompra));
+    .filter((row) => row.vencimento && row.dataBase && Number.isFinite(row.taxaCompra));
+}
 
-  if (!rows.length) {
-    throw new Error("Sem dados de Tesouro Prefixado no arquivo oficial.");
+function buildBrazilTesouroSeries(rows, symbol) {
+  const config = BR_TESOURO_CONFIG[symbol];
+  if (!config) {
+    throw new Error("Ativo do Tesouro nao configurado.");
+  }
+
+  const matchingRows = rows.filter((row) => row.tipo === config.tipo);
+  if (!matchingRows.length) {
+    throw new Error(`Sem dados oficiais para ${config.name}.`);
   }
 
   const latestBaseDate = rows.reduce((latest, row) => (row.dataBase > latest ? row.dataBase : latest), rows[0].dataBase);
-  const currentCandidates = rows
-    .filter((row) => row.dataBase.getTime() === latestBaseDate.getTime())
-    .filter((row) => row.vencimento > latestBaseDate)
-    .sort((a, b) => a.vencimento - b.vencimento);
+  let selected;
 
-  const selected = currentCandidates[0];
-  if (!selected) {
-    throw new Error("Nao foi possivel localizar um Tesouro Prefixado vigente na data-base atual.");
+  if (config.vencimentoRaw) {
+    selected = matchingRows.find(
+      (row) => row.dataBase.getTime() === latestBaseDate.getTime() && row.vencimentoRaw === config.vencimentoRaw
+    );
+  } else {
+    const currentCandidates = matchingRows
+      .filter((row) => row.dataBase.getTime() === latestBaseDate.getTime())
+      .filter((row) => row.vencimento > latestBaseDate)
+      .sort((a, b) => a.vencimento - b.vencimento);
+    selected = currentCandidates[0];
   }
 
-  const series = rows
+  if (!selected) {
+    throw new Error(`Nao foi possivel localizar ${config.name} na data-base atual.`);
+  }
+
+  const series = matchingRows
     .filter((row) => row.vencimentoRaw === selected.vencimentoRaw)
     .sort((a, b) => a.dataBase - b.dataBase)
     .map((row) => ({
@@ -304,10 +328,10 @@ async function fetchTesouroPrefixado() {
   const ytdReference = getClosestPastPoint(series, ytdStart);
 
   return {
-    symbol: "TESOURO_PREFIXADO",
+    symbol,
     currency: "%",
-    exchangeName: `Tesouro Prefixado ${selected.vencimentoRaw}`,
-    shortName: `Tesouro Prefixado ${selected.vencimentoRaw}`,
+    exchangeName: `${config.name} ${selected.vencimentoRaw}`,
+    shortName: `${config.name} ${selected.vencimentoRaw}`,
     marketState: "Tesouro Transparente",
     regularMarketPrice: currentPrice,
     regularMarketTime: currentTimestamp,
@@ -861,12 +885,15 @@ async function handleTesouroApi(requestUrl, response) {
     .map((item) => item.trim())
     .filter(Boolean);
 
+  const needsBrazilTesouro = symbols.some((symbol) => BR_TESOURO_CONFIG[symbol]);
+  const brazilTesouroRows = needsBrazilTesouro ? await fetchTesouroBrazilRows() : null;
+
   const results = await Promise.all(
     symbols.map(async (symbol) => {
       try {
         let data;
-        if (symbol === "TESOURO_PREFIXADO") {
-          data = await fetchTesouroPrefixado();
+        if (BR_TESOURO_CONFIG[symbol]) {
+          data = buildBrazilTesouroSeries(brazilTesouroRows, symbol);
         } else if (US_TREASURY_CONFIG[symbol]) {
           data = await fetchUsTreasurySeries(symbol);
         } else {

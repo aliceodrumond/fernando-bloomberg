@@ -43,6 +43,14 @@ $UsTreasuryConfig = @{
   "UST_10Y" = @{ Column = "10 Yr"; Name = "UST 10y" }
   "UST_30Y" = @{ Column = "30 Yr"; Name = "UST 30y" }
 }
+$BrTesouroConfig = @{
+  "TESOURO_PREFIXADO" = @{ Tipo = "Tesouro Prefixado"; VencimentoRaw = $null; Name = "Tesouro Prefixado" }
+  "NTNB_2029" = @{ Tipo = "Tesouro IPCA+"; VencimentoRaw = "15/05/2029"; Name = "NTN-B 2029" }
+  "NTNB_2035" = @{ Tipo = "Tesouro IPCA+"; VencimentoRaw = "15/05/2035"; Name = "NTN-B 2035" }
+  "NTNB_2045" = @{ Tipo = "Tesouro IPCA+"; VencimentoRaw = "15/05/2045"; Name = "NTN-B 2045" }
+  "NTNB_JS_2035" = @{ Tipo = "Tesouro IPCA+ com Juros Semestrais"; VencimentoRaw = "15/05/2035"; Name = "NTN-B JS 2035" }
+  "NTNB_JS_2055" = @{ Tipo = "Tesouro IPCA+ com Juros Semestrais"; VencimentoRaw = "15/05/2055"; Name = "NTN-B JS 2055" }
+}
 $PalmeirasCityMap = @{
   "allianz parque" = "São Paulo"
   "arena crefisa barueri" = "Barueri"
@@ -266,7 +274,7 @@ function Get-YahooChart {
   }
 }
 
-function Get-TesouroPrefixado {
+function Get-BrazilTesouroRows {
   $response = Invoke-WebRequest -Uri $TesouroCsvUrl -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
   $lines = @($response.Content -split "`r?`n" | Where-Object { $_.Trim() })
   if ($lines.Count -lt 2) {
@@ -287,7 +295,7 @@ function Get-TesouroPrefixado {
     $vencimento = ConvertFrom-PtBrDate -Value $vencimentoRaw
     $dataBase = ConvertFrom-PtBrDate -Value $dataBaseRaw
 
-    if ($tipo -ne "Tesouro Prefixado" -or $null -eq $vencimento -or $null -eq $dataBase -or $null -eq $taxaCompra) {
+    if ($null -eq $vencimento -or $null -eq $dataBase -or $null -eq $taxaCompra) {
       continue
     }
 
@@ -301,24 +309,48 @@ function Get-TesouroPrefixado {
     }
   }
 
-  if ($rows.Count -eq 0) {
-    throw "Sem dados de Tesouro Prefixado no arquivo oficial."
+  return $rows
+}
+
+function Get-BrazilTesouroSeries {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Symbol,
+    [Parameter(Mandatory = $true)] $Rows
+  )
+
+  if (-not $BrTesouroConfig.ContainsKey($Symbol)) {
+    throw "Ativo do Tesouro nao configurado."
+  }
+
+  $config = $BrTesouroConfig[$Symbol]
+  $matchingRows = @($Rows | Where-Object { $_.tipo -eq $config.Tipo })
+  if ($matchingRows.Count -eq 0) {
+    throw "Sem dados oficiais para $($config.Name)."
   }
 
   $latestBaseDate = ($rows | Sort-Object dataBase -Descending | Select-Object -First 1).dataBase
-  $currentCandidates = @(
-    $rows |
-      Where-Object { $_.dataBase -eq $latestBaseDate -and $_.vencimento -gt $latestBaseDate } |
-      Sort-Object vencimento
-  )
+  $selected = $null
 
-  if ($currentCandidates.Count -eq 0) {
-    throw "Nao foi possivel localizar um Tesouro Prefixado vigente na data-base atual."
+  if ($null -ne $config.VencimentoRaw) {
+    $selected = $matchingRows | Where-Object { $_.dataBase -eq $latestBaseDate -and $_.vencimentoRaw -eq $config.VencimentoRaw } | Select-Object -First 1
+  }
+  else {
+    $currentCandidates = @(
+      $matchingRows |
+        Where-Object { $_.dataBase -eq $latestBaseDate -and $_.vencimento -gt $latestBaseDate } |
+        Sort-Object vencimento
+    )
+    if ($currentCandidates.Count -gt 0) {
+      $selected = $currentCandidates[0]
+    }
   }
 
-  $selected = $currentCandidates[0]
+  if ($null -eq $selected) {
+    throw "Nao foi possivel localizar $($config.Name) na data-base atual."
+  }
+
   $series = @(
-    $rows |
+    $matchingRows |
       Where-Object { $_.vencimentoRaw -eq $selected.vencimentoRaw } |
       Sort-Object dataBase |
       ForEach-Object {
@@ -338,10 +370,10 @@ function Get-TesouroPrefixado {
   $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $ytdStart
 
   return @{
-    symbol = "TESOURO_PREFIXADO"
+    symbol = $Symbol
     currency = "%"
-    exchangeName = "Tesouro Prefixado $($selected.vencimentoRaw)"
-    shortName = "Tesouro Prefixado $($selected.vencimentoRaw)"
+    exchangeName = "$($config.Name) $($selected.vencimentoRaw)"
+    shortName = "$($config.Name) $($selected.vencimentoRaw)"
     marketState = "Tesouro Transparente"
     regularMarketPrice = $currentPrice
     regularMarketTime = $currentTimestamp
@@ -922,8 +954,11 @@ try {
 
         foreach ($symbol in $symbols) {
           try {
-            if ($symbol -eq "TESOURO_PREFIXADO") {
-              $data = Get-TesouroPrefixado
+            if ($BrTesouroConfig.ContainsKey($symbol)) {
+              if ($null -eq $script:CachedBrazilTesouroRows) {
+                $script:CachedBrazilTesouroRows = Get-BrazilTesouroRows
+              }
+              $data = Get-BrazilTesouroSeries -Symbol $symbol -Rows $script:CachedBrazilTesouroRows
             }
             elseif ($UsTreasuryConfig.ContainsKey($symbol)) {
               $data = Get-UsTreasurySeries -Symbol $symbol
