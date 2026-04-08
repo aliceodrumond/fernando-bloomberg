@@ -121,6 +121,26 @@ function Get-PercentChange {
   return (($Current / $Reference) - 1) * 100
 }
 
+function Get-ShiftedBusinessDate {
+  param(
+    [Parameter(Mandatory = $true)] [datetime] $Date,
+    [Parameter(Mandatory = $true)] [int] $BusinessDays
+  )
+
+  $shifted = $Date
+  $remaining = [Math]::Abs($BusinessDays)
+  $direction = if ($BusinessDays -ge 0) { 1 } else { -1 }
+
+  while ($remaining -gt 0) {
+    $shifted = $shifted.AddDays($direction)
+    if ($shifted.DayOfWeek -ne [DayOfWeek]::Saturday -and $shifted.DayOfWeek -ne [DayOfWeek]::Sunday) {
+      $remaining--
+    }
+  }
+
+  return $shifted
+}
+
 function ConvertFrom-PtBrNumber {
   param(
     [Parameter(Mandatory = $false)] [string] $Value
@@ -398,10 +418,14 @@ function Get-AnbimaDiProxy {
   $rows = @()
   for ($i = 0; $i -le $matches.Count - 3; $i += 3) {
     $vertex = [double]($matches[$i].Groups[1].Value -replace ",", ".")
+    $priorRate = [double]($matches[$i + 1].Groups[1].Value -replace ",", ".")
     $rate = [double]($matches[$i + 2].Groups[1].Value -replace ",", ".")
-    $rows += @{ vertex = $vertex; rate = $rate }
+    $rows += @{ vertex = $vertex; priorRate = $priorRate; rate = $rate }
   }
 
+  $currentTimestamp = [DateTimeOffset]::new($referenceDate.ToUniversalTime()).ToUnixTimeSeconds()
+  $previousReferenceDate = Get-ShiftedBusinessDate -Date $referenceDate -BusinessDays -1
+  $previousTimestamp = [DateTimeOffset]::new($previousReferenceDate.ToUniversalTime()).ToUnixTimeSeconds()
   $results = @()
   foreach ($symbol in $Symbols) {
     if (-not $DiTargets.ContainsKey($symbol)) {
@@ -413,13 +437,15 @@ function Get-AnbimaDiProxy {
     $targetDate = Get-Date -Date "01/02/$targetYear"
     $targetVertex = Get-BusinessDaysProxy -ReferenceDate $referenceDate -TargetDate $targetDate
     $rate = Get-InterpolatedRate -Rows $rows -TargetVertex $targetVertex
+    $previousRows = @($rows | Where-Object { $null -ne $_.priorRate } | ForEach-Object { @{ vertex = $_.vertex; rate = $_.priorRate } })
+    $previousRate = Get-InterpolatedRate -Rows $previousRows -TargetVertex $targetVertex
 
     if ($null -eq $rate) {
       $results += @{ ok = $false; symbol = $symbol; error = "Nao foi possivel interpolar a curva ANBIMA." }
       continue
     }
 
-    $pointNow = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $previousClose = if ($null -ne $previousRate) { [double]$previousRate } else { [double]$rate }
     $results += @{
       ok = $true
       symbol = $symbol
@@ -429,13 +455,13 @@ function Get-AnbimaDiProxy {
         exchangeName = "ANBIMA ETTJ PRE (proxy)"
         marketState = "Rates"
         regularMarketPrice = [Math]::Round($rate, 4)
-        regularMarketTime = $pointNow
+        regularMarketTime = $currentTimestamp
         points = @(
-          @{ timestamp = $pointNow - 86400; close = [Math]::Round($rate, 4) },
-          @{ timestamp = $pointNow; close = [Math]::Round($rate, 4) }
+          @{ timestamp = $previousTimestamp; close = [Math]::Round($previousClose, 4) },
+          @{ timestamp = $currentTimestamp; close = [Math]::Round($rate, 4) }
         )
         changes = @{
-          day = $null
+          day = if ($null -ne $previousRate) { Get-PercentChange -Current ([double]$rate) -Reference ([double]$previousRate) } else { $null }
           month = $null
           ytd = $null
           year = $null

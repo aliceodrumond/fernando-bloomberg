@@ -39,6 +39,30 @@ function getInterpolatedRate(rows, targetVertex) {
   return lower.rate + weight * (upper.rate - lower.rate);
 }
 
+function shiftBusinessDays(date, businessDays) {
+  const shifted = new Date(date.getTime());
+  let remaining = Math.abs(businessDays);
+  const direction = businessDays >= 0 ? 1 : -1;
+
+  while (remaining > 0) {
+    shifted.setUTCDate(shifted.getUTCDate() + direction);
+    const weekDay = shifted.getUTCDay();
+    if (weekDay !== 0 && weekDay !== 6) {
+      remaining -= 1;
+    }
+  }
+
+  return shifted;
+}
+
+function computePercentChange(current, reference) {
+  if (!Number.isFinite(current) || !Number.isFinite(reference) || reference === 0) {
+    return null;
+  }
+
+  return ((current / reference) - 1) * 100;
+}
+
 async function fetchAnbimaCurve() {
   const response = await fetch("https://www.anbima.com.br/informacoes/curvas-intradiarias/CIntra.asp", {
     headers: {
@@ -82,6 +106,7 @@ async function fetchAnbimaCurve() {
   for (let index = 0; index <= matches.length - 3; index += 3) {
     rows.push({
       vertex: Number(matches[index][1].replace(",", ".")),
+      priorRate: Number(matches[index + 1][1].replace(",", ".")),
       rate: Number(matches[index + 2][1].replace(",", "."))
     });
   }
@@ -110,7 +135,9 @@ module.exports = async function handler(request, response) {
 
   try {
     const curve = await fetchAnbimaCurve();
-    const nowTs = Math.floor(Date.now() / 1000);
+    const currentTimestamp = Math.floor(curve.referenceDate.getTime() / 1000);
+    const previousReferenceDate = shiftBusinessDays(curve.referenceDate, -1);
+    const previousTimestamp = Math.floor(previousReferenceDate.getTime() / 1000);
 
     const results = symbols.map((symbol) => {
       const target = DI_TARGETS[symbol];
@@ -121,6 +148,12 @@ module.exports = async function handler(request, response) {
       const targetDate = new Date(Date.UTC(target.year, 0, 2));
       const targetVertex = getBusinessDaysProxy(curve.referenceDate, targetDate);
       const rate = getInterpolatedRate(curve.rows, targetVertex);
+      const previousRate = getInterpolatedRate(
+        curve.rows
+          .filter((row) => Number.isFinite(row.priorRate))
+          .map((row) => ({ vertex: row.vertex, rate: row.priorRate })),
+        targetVertex
+      );
 
       if (!Number.isFinite(rate)) {
         return { ok: false, symbol, error: "Nao foi possivel interpolar a curva ANBIMA." };
@@ -135,13 +168,13 @@ module.exports = async function handler(request, response) {
           exchangeName: "ANBIMA ETTJ PRE (proxy)",
           marketState: "Rates",
           regularMarketPrice: Number(rate.toFixed(4)),
-          regularMarketTime: nowTs,
+          regularMarketTime: currentTimestamp,
           points: [
-            { timestamp: nowTs - 86400, close: Number(rate.toFixed(4)) },
-            { timestamp: nowTs, close: Number(rate.toFixed(4)) }
+            { timestamp: previousTimestamp, close: Number((Number.isFinite(previousRate) ? previousRate : rate).toFixed(4)) },
+            { timestamp: currentTimestamp, close: Number(rate.toFixed(4)) }
           ],
           changes: {
-            day: null,
+            day: computePercentChange(rate, previousRate),
             month: null,
             ytd: null,
             year: null
