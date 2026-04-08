@@ -32,6 +32,12 @@ const PALMEIRAS_API_ROOT = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao
 const PALMEIRAS_CALENDAR_URL = "https://www.palmeiras.com.br/calendario/";
 const FIFA_GAMES_URL = "https://fifaworldcup26.suites.fifa.com/games/";
 const TESOURO_CSV_URL = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv";
+const US_TREASURY_CONFIG = {
+  UST_2Y: { column: "2 Yr", name: "UST 2y" },
+  UST_5Y: { column: "5 Yr", name: "UST 5y" },
+  UST_10Y: { column: "10 Yr", name: "UST 10y" },
+  UST_30Y: { column: "30 Yr", name: "UST 30y" }
+};
 
 const PALMEIRAS_CITY_MAP = new Map([
   ["allianz parque", "São Paulo"],
@@ -138,6 +144,21 @@ function parsePtBrDate(value) {
   }
 
   return new Date(Date.UTC(year, month - 1, day));
+}
+
+function parseUsDate(value) {
+  const [month, day, year] = String(value || "").split("/").map(Number);
+  if (!day || !month || !year) {
+    return null;
+  }
+
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function parseCsvLine(line) {
+  return String(line)
+    .split(",")
+    .map((item) => item.replace(/^"|"$/g, "").trim());
 }
 
 async function fetchYahooChart(symbol, range = "1y", interval = "1d") {
@@ -296,6 +317,96 @@ async function fetchTesouroPrefixado() {
       month: computePercentChange(currentPrice, oneMonthReference?.close),
       ytd: computePercentChange(currentPrice, ytdReference?.close),
       year: computePercentChange(currentPrice, oneYearReference?.close)
+    }
+  };
+}
+
+async function fetchUsTreasuryCsv(year) {
+  const url = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?_format=csv&type=daily_treasury_yield_curve&field_tdr_date_value=${year}&page=`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "text/csv,text/plain,*/*"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`U.S. Treasury respondeu com status ${response.status} para ${year}.`);
+  }
+
+  return response.text();
+}
+
+async function fetchUsTreasurySeries(symbol) {
+  const config = US_TREASURY_CONFIG[symbol];
+  if (!config) {
+    throw new Error("Ativo de Treasury dos EUA nao configurado.");
+  }
+
+  const currentYear = new Date().getUTCFullYear();
+  const csvChunks = await Promise.all([fetchUsTreasuryCsv(currentYear - 1), fetchUsTreasuryCsv(currentYear)]);
+  const rows = [];
+
+  for (const csv of csvChunks) {
+    const lines = csv.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) {
+      continue;
+    }
+
+    const headers = parseCsvLine(lines[0]);
+    const dateIndex = headers.indexOf("Date");
+    const valueIndex = headers.indexOf(config.column);
+
+    if (dateIndex < 0 || valueIndex < 0) {
+      continue;
+    }
+
+    for (const line of lines.slice(1)) {
+      const parts = parseCsvLine(line);
+      const date = parseUsDate(parts[dateIndex]);
+      const close = Number(parts[valueIndex]);
+
+      if (!date || !Number.isFinite(close)) {
+        continue;
+      }
+
+      rows.push({
+        timestamp: Math.floor(date.getTime() / 1000),
+        close
+      });
+    }
+  }
+
+  const series = rows
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .filter((row, index, array) => index === 0 || row.timestamp !== array[index - 1].timestamp);
+
+  if (!series.length) {
+    throw new Error(`Sem dados oficiais para ${config.name}.`);
+  }
+
+  const currentPoint = series[series.length - 1];
+  const currentTimestamp = currentPoint.timestamp;
+  const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
+  const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
+  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const ytdStart = Date.UTC(new Date(currentTimestamp * 1000).getUTCFullYear(), 0, 1) / 1000;
+  const ytdReference = getClosestPastPoint(series, ytdStart);
+
+  return {
+    symbol,
+    currency: "%",
+    exchangeName: "U.S. Treasury",
+    shortName: config.name,
+    marketState: "Treasury",
+    regularMarketPrice: currentPoint.close,
+    regularMarketTime: currentTimestamp,
+    points: series,
+    changes: {
+      day: computePercentChange(currentPoint.close, oneDayReference?.close),
+      month: computePercentChange(currentPoint.close, oneMonthReference?.close),
+      ytd: computePercentChange(currentPoint.close, ytdReference?.close),
+      year: computePercentChange(currentPoint.close, oneYearReference?.close)
     }
   };
 }
@@ -752,12 +863,16 @@ async function handleTesouroApi(requestUrl, response) {
 
   const results = await Promise.all(
     symbols.map(async (symbol) => {
-      if (symbol !== "TESOURO_PREFIXADO") {
-        return { ok: false, symbol, error: "Ativo do Tesouro nao configurado." };
-      }
-
       try {
-        const data = await fetchTesouroPrefixado();
+        let data;
+        if (symbol === "TESOURO_PREFIXADO") {
+          data = await fetchTesouroPrefixado();
+        } else if (US_TREASURY_CONFIG[symbol]) {
+          data = await fetchUsTreasurySeries(symbol);
+        } else {
+          return { ok: false, symbol, error: "Ativo do Tesouro nao configurado." };
+        }
+
         return { ok: true, symbol, data };
       } catch (error) {
         return {

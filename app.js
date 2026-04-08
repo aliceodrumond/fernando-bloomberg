@@ -50,9 +50,10 @@ const assets = [
     changeDisplay: "bps",
     note: "Taxa oficial diária do Tesouro Transparente para o prefixado mais curto disponível."
   },
-  { name: "UST 2y", symbol: "2YY=F", group: "Rates", source: "yahoo", formatter: formatRate, changeDisplay: "bps", bpsMultiplier: 100 },
-  { name: "UST 5y", symbol: "^FVX", group: "Rates", source: "yahoo", formatter: formatTnxRate, changeDisplay: "bps", bpsMultiplier: 10 },
-  { name: "UST 10y", symbol: "^TNX", group: "Rates", source: "yahoo", formatter: formatTnxRate, changeDisplay: "bps", bpsMultiplier: 10 },
+  { name: "UST 2y", symbol: "UST_2Y", group: "Rates", source: "tesouro", formatter: formatRate, changeDisplay: "bps" },
+  { name: "UST 5y", symbol: "UST_5Y", group: "Rates", source: "tesouro", formatter: formatRate, changeDisplay: "bps" },
+  { name: "UST 10y", symbol: "UST_10Y", group: "Rates", source: "tesouro", formatter: formatRate, changeDisplay: "bps" },
+  { name: "UST 30y", symbol: "UST_30Y", group: "Rates", source: "tesouro", formatter: formatRate, changeDisplay: "bps" },
   { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber, invertChangeColors: true },
   { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo", invertChangeColors: true },
   { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo", invertChangeColors: true },

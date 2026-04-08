@@ -37,6 +37,12 @@ $PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jog
 $PalmeirasCalendarUrl = "https://www.palmeiras.com.br/calendario/"
 $FifaGamesUrl = "https://fifaworldcup26.suites.fifa.com/games/"
 $TesouroCsvUrl = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
+$UsTreasuryConfig = @{
+  "UST_2Y" = @{ Column = "2 Yr"; Name = "UST 2y" }
+  "UST_5Y" = @{ Column = "5 Yr"; Name = "UST 5y" }
+  "UST_10Y" = @{ Column = "10 Yr"; Name = "UST 10y" }
+  "UST_30Y" = @{ Column = "30 Yr"; Name = "UST 30y" }
+}
 $PalmeirasCityMap = @{
   "allianz parque" = "São Paulo"
   "arena crefisa barueri" = "Barueri"
@@ -162,6 +168,19 @@ function ConvertFrom-PtBrDate {
 
   try {
     return [datetime]::ParseExact($Value, "dd/MM/yyyy", $null)
+  }
+  catch {
+    return $null
+  }
+}
+
+function ConvertFrom-UsDate {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Value
+  )
+
+  try {
+    return [datetime]::ParseExact($Value, "MM/dd/yyyy", $null)
   }
   catch {
     return $null
@@ -332,6 +351,101 @@ function Get-TesouroPrefixado {
       month = if ($oneMonthReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneMonthReference.close) } else { $null }
       ytd = if ($ytdReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$ytdReference.close) } else { $null }
       year = if ($oneYearReference) { Get-PercentChange -Current $currentPrice -Reference ([double]$oneYearReference.close) } else { $null }
+    }
+  }
+}
+
+function Get-UsTreasuryCsv {
+  param(
+    [Parameter(Mandatory = $true)] [int] $Year
+  )
+
+  $url = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/$Year/all?_format=csv&type=daily_treasury_yield_curve&field_tdr_date_value=$Year&page="
+  $response = Invoke-WebRequest -Uri $url -Headers @{ "User-Agent" = "Mozilla/5.0" } -Method Get -UseBasicParsing
+  return $response.Content
+}
+
+function Get-UsTreasurySeries {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Symbol
+  )
+
+  if (-not $UsTreasuryConfig.ContainsKey($Symbol)) {
+    throw "Ativo de Treasury dos EUA nao configurado."
+  }
+
+  $config = $UsTreasuryConfig[$Symbol]
+  $currentYear = (Get-Date).ToUniversalTime().Year
+  $csvChunks = @(
+    Get-UsTreasuryCsv -Year ($currentYear - 1)
+    Get-UsTreasuryCsv -Year $currentYear
+  )
+
+  $rows = @()
+  foreach ($csv in $csvChunks) {
+    $lines = @($csv -split "`r?`n" | Where-Object { $_.Trim() })
+    if ($lines.Count -lt 2) {
+      continue
+    }
+
+    $headers = $lines[0].Split(",") | ForEach-Object { $_.Trim('"') }
+    $dateIndex = [Array]::IndexOf($headers, "Date")
+    $valueIndex = [Array]::IndexOf($headers, $config.Column)
+    if ($dateIndex -lt 0 -or $valueIndex -lt 0) {
+      continue
+    }
+
+    foreach ($line in $lines[1..($lines.Count - 1)]) {
+      $parts = $line.Split(",") | ForEach-Object { $_.Trim('"') }
+      if ($parts.Count -le $valueIndex) {
+        continue
+      }
+
+      $date = ConvertFrom-UsDate -Value $parts[$dateIndex]
+      $close = 0.0
+      $isNumber = [double]::TryParse($parts[$valueIndex], [ref]$close)
+      if ($null -eq $date -or -not $isNumber) {
+        continue
+      }
+
+      $rows += @{
+        timestamp = [Math]::Floor(([DateTimeOffset]$date.ToUniversalTime()).ToUnixTimeSeconds())
+        close = [double]$close
+      }
+    }
+  }
+
+  $series = @(
+    $rows |
+      Sort-Object timestamp -Unique
+  )
+
+  if ($series.Count -eq 0) {
+    throw "Sem dados oficiais para $($config.Name)."
+  }
+
+  $currentPoint = $series[-1]
+  $currentTimestamp = [double]$currentPoint.timestamp
+  $oneDayReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 2 * 24 * 60 * 60)
+  $oneMonthReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 31 * 24 * 60 * 60)
+  $oneYearReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 366 * 24 * 60 * 60)
+  $currentYearStart = [Math]::Floor(([DateTimeOffset]::new([datetime]::new(([DateTimeOffset]::FromUnixTimeSeconds([int64]$currentTimestamp)).UtcDateTime.Year, 1, 1, 0, 0, 0, [DateTimeKind]::Utc))).ToUnixTimeSeconds())
+  $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $currentYearStart
+
+  return @{
+    symbol = $Symbol
+    currency = "%"
+    exchangeName = "U.S. Treasury"
+    shortName = $config.Name
+    marketState = "Treasury"
+    regularMarketPrice = [double]$currentPoint.close
+    regularMarketTime = $currentTimestamp
+    points = $series
+    changes = @{
+      day = if ($oneDayReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$oneDayReference.close) } else { $null }
+      month = if ($oneMonthReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$oneMonthReference.close) } else { $null }
+      ytd = if ($ytdReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$ytdReference.close) } else { $null }
+      year = if ($oneYearReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$oneYearReference.close) } else { $null }
     }
   }
 }
@@ -807,13 +921,18 @@ try {
         $results = @()
 
         foreach ($symbol in $symbols) {
-          if ($symbol -ne "TESOURO_PREFIXADO") {
-            $results += @{ ok = $false; symbol = $symbol; error = "Ativo do Tesouro nao configurado." }
-            continue
-          }
-
           try {
-            $data = Get-TesouroPrefixado
+            if ($symbol -eq "TESOURO_PREFIXADO") {
+              $data = Get-TesouroPrefixado
+            }
+            elseif ($UsTreasuryConfig.ContainsKey($symbol)) {
+              $data = Get-UsTreasurySeries -Symbol $symbol
+            }
+            else {
+              $results += @{ ok = $false; symbol = $symbol; error = "Ativo do Tesouro nao configurado." }
+              continue
+            }
+
             $results += @{ ok = $true; symbol = $symbol; data = $data }
           }
           catch {
