@@ -47,8 +47,12 @@ const assets = [
     group: "Rates",
     source: "tesouro",
     formatter: formatRate,
+    changeDisplay: "bps",
     note: "Taxa oficial diária do Tesouro Transparente para o prefixado mais curto disponível."
   },
+  { name: "UST 2y", symbol: "2YY=F", group: "Rates", source: "yahoo", formatter: formatRate, changeDisplay: "bps", bpsMultiplier: 100 },
+  { name: "UST 5y", symbol: "^FVX", group: "Rates", source: "yahoo", formatter: formatTnxRate, changeDisplay: "bps", bpsMultiplier: 10 },
+  { name: "UST 10y", symbol: "^TNX", group: "Rates", source: "yahoo", formatter: formatTnxRate, changeDisplay: "bps", bpsMultiplier: 10 },
   { name: "DXY", symbol: "DX-Y.NYB", group: "FX", source: "yahoo", formatter: formatNumber, invertChangeColors: true },
   { name: "MXN", symbol: "MXN=X", group: "FX", source: "yahoo", invertChangeColors: true },
   { name: "JPY", symbol: "JPY=X", group: "FX", source: "yahoo", invertChangeColors: true },
@@ -874,6 +878,20 @@ function getFilteredPoints(points, range, zoomValue) {
   return rangePoints.slice(-visibleCount);
 }
 
+function getClosestPastPoint(points, targetTimestamp) {
+  let match = null;
+
+  for (const point of points) {
+    if (point.timestamp <= targetTimestamp) {
+      match = point;
+    } else {
+      break;
+    }
+  }
+
+  return match;
+}
+
 function applyRange(points, range) {
   if (!points.length) {
     return [];
@@ -961,6 +979,14 @@ function formatRate(value) {
   return `${value.toFixed(2)}%`;
 }
 
+function formatTnxRate(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+
+  return `${(value / 10).toFixed(2)}%`;
+}
+
 function formatNumber(value) {
   if (!Number.isFinite(value)) {
     return "--";
@@ -1030,17 +1056,36 @@ function getChangeState(value, asset) {
 }
 
 function normalizeChangeValue(value, asset, period, data) {
-  if (Number.isFinite(value)) {
-    return value;
+  if (asset?.changeDisplay === "bps") {
+    const points = Array.isArray(data?.points) ? data.points.filter((point) => Number.isFinite(point?.close)) : [];
+    if (!points.length) {
+      return null;
+    }
+
+    const currentPoint = points[points.length - 1];
+    let referencePoint = null;
+
+    if (period === "day" && points.length >= 2) {
+      referencePoint = points[points.length - 2];
+    } else if (period === "month") {
+      referencePoint = getClosestPastPoint(points, currentPoint.timestamp - 31 * 24 * 60 * 60);
+    } else if (period === "year") {
+      referencePoint = getClosestPastPoint(points, currentPoint.timestamp - 366 * 24 * 60 * 60);
+    } else if (period === "ytd") {
+      const currentYear = new Date(currentPoint.timestamp * 1000).getUTCFullYear();
+      const yearStart = Date.UTC(currentYear, 0, 1) / 1000;
+      referencePoint = getClosestPastPoint(points, yearStart);
+    }
+
+    if (referencePoint && Number.isFinite(referencePoint.close)) {
+      return (currentPoint.close - referencePoint.close) * (asset?.bpsMultiplier || 100);
+    }
+
+    return null;
   }
 
-  if (asset?.changeDisplay === "bps" && period === "day") {
-    const points = Array.isArray(data?.points) ? data.points.filter((point) => Number.isFinite(point?.close)) : [];
-    if (points.length >= 2) {
-      const previousPoint = points[points.length - 2];
-      const currentPoint = points[points.length - 1];
-      return (currentPoint.close - previousPoint.close) * 100;
-    }
+  if (Number.isFinite(value)) {
+    return value;
   }
 
   return value;
@@ -1051,7 +1096,7 @@ function formatChangeValue(value, asset, period) {
     return "--";
   }
 
-  if (asset?.changeDisplay === "bps" && period === "day") {
+  if (asset?.changeDisplay === "bps") {
     return `${value >= 0 ? "+" : ""}${value.toFixed(1)}bp`;
   }
 
