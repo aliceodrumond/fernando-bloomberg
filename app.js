@@ -11,6 +11,7 @@ const assets = [
     group: "Rates",
     source: "diProxy",
     formatter: formatRate,
+    changeDisplay: "bps",
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2027."
   },
   {
@@ -19,6 +20,7 @@ const assets = [
     group: "Rates",
     source: "diProxy",
     formatter: formatRate,
+    changeDisplay: "bps",
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2028."
   },
   {
@@ -27,6 +29,7 @@ const assets = [
     group: "Rates",
     source: "diProxy",
     formatter: formatRate,
+    changeDisplay: "bps",
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2031."
   },
   {
@@ -35,6 +38,7 @@ const assets = [
     group: "Rates",
     source: "diProxy",
     formatter: formatRate,
+    changeDisplay: "bps",
     note: "Proxy ANBIMA ETTJ PRE para o vértice de jan/2036."
   },
   {
@@ -320,10 +324,10 @@ function renderLiveRow(asset, result) {
         ${priceFormatter(result.data.regularMarketPrice)}
         <span class="meta">${escapeHtml(result.data.currency || result.data.exchangeName || "Yahoo")}</span>
       </div>
-      ${renderChangeCell(result.data.changes.day, asset)}
-      ${renderChangeCell(result.data.changes.month, asset)}
-      ${renderChangeCell(result.data.changes.ytd, asset)}
-      ${renderChangeCell(result.data.changes.year, asset)}
+      ${renderChangeCell(result.data.changes.day, asset, "day", result.data)}
+      ${renderChangeCell(result.data.changes.month, asset, "month", result.data)}
+      ${renderChangeCell(result.data.changes.ytd, asset, "ytd", result.data)}
+      ${renderChangeCell(result.data.changes.year, asset, "year", result.data)}
     </button>
   `;
 }
@@ -518,10 +522,10 @@ function renderDetailPanel(config) {
   `;
   symbolEl.textContent = asset.symbol;
   priceEl.textContent = formatter(data.regularMarketPrice);
-  setChangeText(dayEl, data.changes.day, asset);
-  setChangeText(monthEl, data.changes.month, asset);
-  setChangeText(ytdEl, data.changes.ytd, asset);
-  setChangeText(yearEl, data.changes.year, asset);
+  setChangeText(dayEl, data.changes.day, asset, "day", data);
+  setChangeText(monthEl, data.changes.month, asset, "month", data);
+  setChangeText(ytdEl, data.changes.ytd, asset, "ytd", data);
+  setChangeText(yearEl, data.changes.year, asset, "year", data);
   windowEl.textContent = firstLabel && lastLabel
     ? `Janela: ${formatPointDate(firstLabel.timestamp)} a ${formatPointDate(lastLabel.timestamp)}`
     : "Janela: --";
@@ -903,15 +907,17 @@ function applyRange(points, range) {
   return points;
 }
 
-function renderChangeCell(value, asset) {
-  const state = getChangeState(value, asset);
-  const content = Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}%` : "--";
+function renderChangeCell(value, asset, period, data) {
+  const normalized = normalizeChangeValue(value, asset, period, data);
+  const state = getChangeState(normalized, asset);
+  const content = formatChangeValue(normalized, asset, period);
   return `<div class="change-value ${state}">${content}</div>`;
 }
 
-function setChangeText(element, value, asset) {
-  const state = getChangeState(value, asset);
-  const content = Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}%` : "--";
+function setChangeText(element, value, asset, period, data) {
+  const normalized = normalizeChangeValue(value, asset, period, data);
+  const state = getChangeState(normalized, asset);
+  const content = formatChangeValue(normalized, asset, period);
   element.textContent = content;
   element.className = state;
 }
@@ -1021,6 +1027,35 @@ function getChangeState(value, asset) {
   }
 
   return "neutral";
+}
+
+function normalizeChangeValue(value, asset, period, data) {
+  if (Number.isFinite(value)) {
+    return value;
+  }
+
+  if (asset?.changeDisplay === "bps" && period === "day") {
+    const points = Array.isArray(data?.points) ? data.points.filter((point) => Number.isFinite(point?.close)) : [];
+    if (points.length >= 2) {
+      const previousPoint = points[points.length - 2];
+      const currentPoint = points[points.length - 1];
+      return (currentPoint.close - previousPoint.close) * 100;
+    }
+  }
+
+  return value;
+}
+
+function formatChangeValue(value, asset, period) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+
+  if (asset?.changeDisplay === "bps" && period === "day") {
+    return `${value >= 0 ? "+" : ""}${value.toFixed(1)}bp`;
+  }
+
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function formatPointDate(timestamp) {
