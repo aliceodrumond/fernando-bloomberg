@@ -28,9 +28,21 @@ $DiTargets = @{
 }
 
 $NewsFeeds = @{
-  brazil = "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-  us = "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en"
-  world = "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en"
+  brazil = @(
+    "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=Brasil+economia+mercado+financeiro+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=site:agenciabrasil.ebc.com.br+economia+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+  )
+  us = @(
+    "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=US+markets+fed+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+US+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  )
+  world = @(
+    "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=world+geopolitics+markets+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+world+news+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  )
 }
 
 $PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/"
@@ -120,6 +132,24 @@ function Get-ClosestPastPoint {
   }
 
   return $match
+}
+
+function Get-OneYearReference {
+  param(
+    [Parameter(Mandatory = $true)] $Series,
+    [Parameter(Mandatory = $true)] [double] $CurrentTimestamp
+  )
+
+  $match = Get-ClosestPastPoint -Series $Series -TargetTimestamp ($CurrentTimestamp - 366 * 24 * 60 * 60)
+  if ($null -ne $match) {
+    return $match
+  }
+
+  if ($Series.Count -gt 0) {
+    return $Series[0]
+  }
+
+  return $null
 }
 
 function Get-PercentChange {
@@ -253,7 +283,7 @@ function Get-YahooChart {
   $currentTimestamp = if ($null -ne $meta.regularMarketTime) { [double]$meta.regularMarketTime } else { [double]$series[-1].timestamp }
   $oneDayReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 2 * 24 * 60 * 60)
   $oneMonthReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 31 * 24 * 60 * 60)
-  $oneYearReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 366 * 24 * 60 * 60)
+  $oneYearReference = Get-OneYearReference -Series $series -CurrentTimestamp $currentTimestamp
   $yearStartTimestamp = [Math]::Floor(([DateTimeOffset]::new([DateTime]::new((Get-Date -Date ([DateTimeOffset]::FromUnixTimeSeconds([int64]$currentTimestamp).UtcDateTime)).Year, 1, 1, 0, 0, 0, [DateTimeKind]::Utc))).ToUnixTimeSeconds())
   $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $yearStartTimestamp
 
@@ -365,7 +395,7 @@ function Get-BrazilTesouroSeries {
   $currentTimestamp = [Math]::Floor(([DateTimeOffset]$latestBaseDate).ToUnixTimeSeconds())
   $oneDayReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 2 * 24 * 60 * 60)
   $oneMonthReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 31 * 24 * 60 * 60)
-  $oneYearReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 366 * 24 * 60 * 60)
+  $oneYearReference = Get-OneYearReference -Series $series -CurrentTimestamp $currentTimestamp
   $ytdStart = [Math]::Floor(([DateTimeOffset]::new([datetime]::new($latestBaseDate.Year, 1, 1, 0, 0, 0, [DateTimeKind]::Unspecified))).ToUnixTimeSeconds())
   $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $ytdStart
 
@@ -460,7 +490,7 @@ function Get-UsTreasurySeries {
   $currentTimestamp = [double]$currentPoint.timestamp
   $oneDayReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 2 * 24 * 60 * 60)
   $oneMonthReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 31 * 24 * 60 * 60)
-  $oneYearReference = Get-ClosestPastPoint -Series $series -TargetTimestamp ($currentTimestamp - 366 * 24 * 60 * 60)
+  $oneYearReference = Get-OneYearReference -Series $series -CurrentTimestamp $currentTimestamp
   $currentYearStart = [Math]::Floor(([DateTimeOffset]::new([datetime]::new(([DateTimeOffset]::FromUnixTimeSeconds([int64]$currentTimestamp)).UtcDateTime.Year, 1, 1, 0, 0, 0, [DateTimeKind]::Utc))).ToUnixTimeSeconds())
   $ytdReference = Get-ClosestPastPoint -Series $series -TargetTimestamp $currentYearStart
 
@@ -645,6 +675,53 @@ function Get-NewsFeedItems {
   return @($items | Sort-Object {
     try { [DateTime]::Parse($_.published) } catch { [DateTime]::MinValue }
   } -Descending)
+}
+
+function Get-NewsFeedItemsWithRetry {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Url,
+    [int] $Attempts = 2
+  )
+
+  $lastError = $null
+  for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+    try {
+      return Get-NewsFeedItems -Url $Url
+    }
+    catch {
+      $lastError = $_
+      if ($attempt -lt $Attempts) {
+        Start-Sleep -Milliseconds (500 * $attempt)
+      }
+    }
+  }
+
+  throw $lastError
+}
+
+function Get-NewsFeedGroup {
+  param(
+    [Parameter(Mandatory = $true)] [string[]] $Urls
+  )
+
+  $lastError = $null
+  foreach ($url in $Urls) {
+    try {
+      $items = Get-NewsFeedItemsWithRetry -Url $url -Attempts 3
+      if ($items.Count -gt 0) {
+        return $items
+      }
+    }
+    catch {
+      $lastError = $_
+    }
+  }
+
+  if ($null -ne $lastError) {
+    throw $lastError
+  }
+
+  throw "Nenhum feed de noticias respondeu."
 }
 
 function Normalize-Text {
@@ -885,10 +962,20 @@ try {
       $path = $request.Url.AbsolutePath
 
       if ($path -eq "/api/news") {
+        $brazil = $null
+        $us = $null
+        $world = $null
+        $errors = @{}
+
+        try { $brazil = Get-NewsFeedGroup -Urls $NewsFeeds.brazil } catch { $errors["brazil"] = $_.Exception.Message; $brazil = @() }
+        try { $us = Get-NewsFeedGroup -Urls $NewsFeeds.us } catch { $errors["us"] = $_.Exception.Message; $us = @() }
+        try { $world = Get-NewsFeedGroup -Urls $NewsFeeds.world } catch { $errors["world"] = $_.Exception.Message; $world = @() }
+
         Send-Json -Response $response -StatusCode 200 -Payload @{
-          brazil = Get-NewsFeedItems -Url $NewsFeeds.brazil
-          us = Get-NewsFeedItems -Url $NewsFeeds.us
-          world = Get-NewsFeedItems -Url $NewsFeeds.world
+          brazil = $brazil
+          us = $us
+          world = $world
+          errors = $errors
           asOf = [DateTime]::UtcNow.ToString("o")
         }
         continue

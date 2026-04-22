@@ -58,6 +58,10 @@ function getClosestPastPoint(series, targetTimestamp) {
   return match;
 }
 
+function getOneYearReference(series, currentTimestamp) {
+  return getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60) || series[0] || null;
+}
+
 function computePercentChange(current, reference) {
   if (!Number.isFinite(current) || !Number.isFinite(reference) || reference === 0) {
     return null;
@@ -138,7 +142,7 @@ function buildBrazilTesouroSeries(rows, symbol) {
   const currentTimestamp = Math.floor(latestBaseDate.getTime() / 1000);
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const ytdStart = Date.UTC(latestBaseDate.getUTCFullYear(), 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, ytdStart);
 
@@ -228,7 +232,7 @@ async function fetchUsTreasurySeries(symbol) {
   const currentTimestamp = currentPoint.timestamp;
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const currentYearStart = Date.UTC(new Date(currentTimestamp * 1000).getUTCFullYear(), 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, currentYearStart);
 

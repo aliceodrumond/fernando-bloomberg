@@ -23,9 +23,21 @@ const YAHOO_HEADERS = {
 };
 
 const NEWS_FEEDS = {
-  brazil: "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflation+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-  us: "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
-  world: "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en"
+  brazil: [
+    "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=Brasil+economia+mercado+financeiro+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=site:agenciabrasil.ebc.com.br+economia+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+  ],
+  us: [
+    "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=US+markets+fed+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+US+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  ],
+  world: [
+    "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=world+geopolitics+markets+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+world+news+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  ]
 };
 
 const PALMEIRAS_API_ROOT = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jogos-mes/";
@@ -131,6 +143,10 @@ function getClosestPastPoint(series, targetTimestamp) {
   return match;
 }
 
+function getOneYearReference(series, currentTimestamp) {
+  return getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60) || series[0] || null;
+}
+
 function computePercentChange(current, reference) {
   if (!Number.isFinite(current) || !Number.isFinite(reference) || reference === 0) {
     return null;
@@ -226,7 +242,7 @@ async function fetchYahooChart(symbol, range = "1y", interval = "1d") {
 
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const currentYear = new Date(currentTimestamp * 1000).getUTCFullYear();
   const ytdStart = Date.UTC(currentYear, 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, ytdStart);
@@ -323,7 +339,7 @@ function buildBrazilTesouroSeries(rows, symbol) {
   const currentTimestamp = Math.floor(latestBaseDate.getTime() / 1000);
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const ytdStart = Date.UTC(latestBaseDate.getUTCFullYear(), 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, ytdStart);
 
@@ -413,7 +429,7 @@ async function fetchUsTreasurySeries(symbol) {
   const currentTimestamp = currentPoint.timestamp;
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const ytdStart = Date.UTC(new Date(currentTimestamp * 1000).getUTCFullYear(), 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, ytdStart);
 
@@ -723,6 +739,40 @@ async function fetchNewsFeed(url) {
   return parseNewsItems(xml);
 }
 
+async function fetchNewsFeedWithRetry(url, attempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetchNewsFeed(url);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function fetchNewsFeedGroup(urls) {
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const items = await fetchNewsFeedWithRetry(url, 3);
+      if (items.length) {
+        return items;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Nenhum feed de noticias respondeu.");
+}
+
 async function fetchPalmeirasGames() {
   const refs = buildMonthRefs(3);
   const responses = await Promise.all(
@@ -915,16 +965,21 @@ async function handleTesouroApi(requestUrl, response) {
 }
 
 async function handleNewsApi(response) {
-  const [brazil, us, world] = await Promise.all([
-    fetchNewsFeed(NEWS_FEEDS.brazil),
-    fetchNewsFeed(NEWS_FEEDS.us),
-    fetchNewsFeed(NEWS_FEEDS.world)
+  const [brazil, us, world] = await Promise.allSettled([
+    fetchNewsFeedGroup(NEWS_FEEDS.brazil),
+    fetchNewsFeedGroup(NEWS_FEEDS.us),
+    fetchNewsFeedGroup(NEWS_FEEDS.world)
   ]);
 
   sendJson(response, 200, {
-    brazil,
-    us,
-    world,
+    brazil: brazil.status === "fulfilled" ? brazil.value : [],
+    us: us.status === "fulfilled" ? us.value : [],
+    world: world.status === "fulfilled" ? world.value : [],
+    errors: {
+      ...(brazil.status === "rejected" ? { brazil: brazil.reason?.message || "Falha ao carregar feed do Brasil." } : {}),
+      ...(us.status === "rejected" ? { us: us.reason?.message || "Falha ao carregar feed dos EUA." } : {}),
+      ...(world.status === "rejected" ? { world: world.reason?.message || "Falha ao carregar feed global." } : {})
+    },
     asOf: new Date().toISOString()
   });
 }

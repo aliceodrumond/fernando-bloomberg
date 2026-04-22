@@ -1,7 +1,19 @@
 const FEEDS = {
-  brazil: "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-  us: "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
-  world: "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en"
+  brazil: [
+    "https://news.google.com/rss/search?q=Brasil+economia+mercados+OR+copom+OR+inflacao+OR+fiscal+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=Brasil+economia+mercado+financeiro+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419",
+    "https://news.google.com/rss/search?q=site:agenciabrasil.ebc.com.br+economia+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+  ],
+  us: [
+    "https://news.google.com/rss/search?q=US+markets+economy+fed+OR+tariffs+OR+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=US+markets+fed+inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+US+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  ],
+  world: [
+    "https://news.google.com/rss/search?q=world+war+geopolitics+markets+OR+china+OR+oil+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=world+geopolitics+markets+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=site:reuters.com+world+news+markets+when:1d&hl=en-US&gl=US&ceid=US:en"
+  ]
 };
 
 function decodeXml(value) {
@@ -49,6 +61,40 @@ async function fetchFeed(url) {
   return parseItems(xml);
 }
 
+async function fetchFeedWithRetry(url, attempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetchFeed(url);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function fetchFeedGroup(urls) {
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const items = await fetchFeedWithRetry(url, 3);
+      if (items.length) {
+        return items;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Nenhum feed de noticias respondeu.");
+}
+
 module.exports = async function handler(request, response) {
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
@@ -58,22 +104,21 @@ module.exports = async function handler(request, response) {
     return;
   }
 
-  try {
-    const [brazil, us, world] = await Promise.all([
-      fetchFeed(FEEDS.brazil),
-      fetchFeed(FEEDS.us),
-      fetchFeed(FEEDS.world)
-    ]);
+  const [brazil, us, world] = await Promise.allSettled([
+    fetchFeedGroup(FEEDS.brazil),
+    fetchFeedGroup(FEEDS.us),
+    fetchFeedGroup(FEEDS.world)
+  ]);
 
-    response.status(200).json({
-      brazil,
-      us,
-      world,
-      asOf: new Date().toISOString()
-    });
-  } catch (error) {
-    response.status(500).json({
-      error: error instanceof Error ? error.message : "Falha ao carregar noticias."
-    });
-  }
+  response.status(200).json({
+    brazil: brazil.status === "fulfilled" ? brazil.value : [],
+    us: us.status === "fulfilled" ? us.value : [],
+    world: world.status === "fulfilled" ? world.value : [],
+    errors: {
+      ...(brazil.status === "rejected" ? { brazil: brazil.reason?.message || "Falha ao carregar feed do Brasil." } : {}),
+      ...(us.status === "rejected" ? { us: us.reason?.message || "Falha ao carregar feed dos EUA." } : {}),
+      ...(world.status === "rejected" ? { world: world.reason?.message || "Falha ao carregar feed global." } : {})
+    },
+    asOf: new Date().toISOString()
+  });
 };

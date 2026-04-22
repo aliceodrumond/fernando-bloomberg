@@ -35,6 +35,10 @@ function getClosestPastPoint(series, targetTimestamp) {
   return match;
 }
 
+function getOneYearReference(series, currentTimestamp) {
+  return getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60) || series[0] || null;
+}
+
 function computePercentChange(current, reference) {
   if (!Number.isFinite(current) || !Number.isFinite(reference) || reference === 0) {
     return null;
@@ -99,7 +103,7 @@ async function fetchYahooChart(symbol, range = "1y", interval = "1d") {
   const currentTimestamp = meta.regularMarketTime ?? series[series.length - 1].timestamp;
   const oneDayReference = getClosestPastPoint(series, currentTimestamp - 2 * 24 * 60 * 60);
   const oneMonthReference = getClosestPastPoint(series, currentTimestamp - 31 * 24 * 60 * 60);
-  const oneYearReference = getClosestPastPoint(series, currentTimestamp - 366 * 24 * 60 * 60);
+  const oneYearReference = getOneYearReference(series, currentTimestamp);
   const currentYear = new Date(currentTimestamp * 1000).getUTCFullYear();
   const ytdStart = Date.UTC(currentYear, 0, 1) / 1000;
   const ytdReference = getClosestPastPoint(series, ytdStart);

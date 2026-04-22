@@ -2,6 +2,7 @@ const REFRESH_INTERVAL_MS = 60_000;
 const CLOCK_REFRESH_MS = 1_000;
 const DEFAULT_RANGE = "3M";
 const GROUP_ORDER = ["FX", "Rates", "Equities", "Commodities", "Brazil", "US", "Crypto"];
+const NEWS_CACHE_KEY = "fernando-bloomberg-news-cache-v1";
 
 const assets = [
   { name: "BRL", symbol: "USDBRL=X", group: "FX", source: "yahoo", formatter: formatBrl, invertChangeColors: true },
@@ -234,14 +235,33 @@ async function fetchMarketPayload(yahooSymbols, diSymbols, tesouroSymbols) {
 }
 
 async function fetchNewsPayload() {
-  const response = await fetch("/api/news");
-  const payload = await response.json();
+  try {
+    const response = await fetch("/api/news");
+    const payload = await response.json();
 
-  if (!response.ok) {
-    throw new Error(payload.error || "Falha ao carregar noticias.");
+    if (!response.ok) {
+      throw new Error(payload.error || "Falha ao carregar noticias.");
+    }
+
+    const totalItems = (payload.brazil?.length || 0) + (payload.us?.length || 0) + (payload.world?.length || 0);
+    if (totalItems > 0) {
+      localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify(payload));
+    }
+
+    return payload;
+  } catch (error) {
+    const cached = localStorage.getItem(NEWS_CACHE_KEY);
+    if (cached) {
+      const payload = JSON.parse(cached);
+      return {
+        ...payload,
+        cached: true,
+        cacheMessage: error?.message || "Falha ao carregar noticias ao vivo."
+      };
+    }
+
+    throw error;
   }
-
-  return payload;
 }
 
 async function fetchGamesPayload() {
@@ -669,6 +689,20 @@ function renderNews(payload) {
   renderNewsColumn(newsBrazilEl, payload.brazil || [], "Sem notícias do Brasil agora.");
   renderNewsColumn(newsUsEl, payload.us || [], "Sem notícias dos EUA agora.");
   renderNewsColumn(newsWorldEl, payload.world || [], "Sem notícias globais agora.");
+}
+
+if (false) {
+  if (payload.cached) {
+    const note = `<div class="news-empty">Exibindo ultima atualizacao salva. ${escapeHtml(payload.cacheMessage || "")}</div>`;
+
+    if (!topBreakingEl.querySelector(".headline-item")) {
+      topBreakingEl.innerHTML += note;
+    }
+
+    if (!topMacroEl.querySelector(".headline-item")) {
+      topMacroEl.innerHTML += note;
+    }
+  }
 }
 
 function renderNewsError(error) {
