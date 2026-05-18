@@ -74,6 +74,7 @@ const assets = [
   { name: "WTI", symbol: "CL=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Silver", symbol: "SI=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Copper", symbol: "HG=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
+  { name: "Iron Ore", symbol: "TIO=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Corn", symbol: "ZC=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Soybeans", symbol: "ZS=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Vale", symbol: "VALE3.SA", group: "Brazil", source: "yahoo", formatter: formatBrl },
