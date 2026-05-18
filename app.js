@@ -74,7 +74,14 @@ const assets = [
   { name: "WTI", symbol: "CL=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Silver", symbol: "SI=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Copper", symbol: "HG=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
-  { name: "Iron Ore", symbol: "TIO=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
+  {
+    name: "Iron Ore 62%",
+    symbol: "SCOA",
+    group: "Commodities",
+    source: "ironOre",
+    formatter: formatUsd,
+    note: "Primeiro futuro de minerio 62% via referencia publica do contrato continuo."
+  },
   { name: "Corn", symbol: "ZC=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Soybeans", symbol: "ZS=F", group: "Commodities", source: "yahoo", formatter: formatUsd },
   { name: "Vale", symbol: "VALE3.SA", group: "Brazil", source: "yahoo", formatter: formatBrl },
@@ -143,15 +150,17 @@ async function loadData() {
   renderGamesLoading();
 
   const visibleAssets = assets.filter((asset) => !asset.hidden);
-  const yahooAssets = visibleAssets.filter((asset) => asset.source !== "diProxy");
+  const yahooAssets = visibleAssets.filter((asset) => asset.source === "yahoo");
   const diAssets = visibleAssets.filter((asset) => asset.source === "diProxy");
   const tesouroAssets = visibleAssets.filter((asset) => asset.source === "tesouro");
+  const ironOreAssets = visibleAssets.filter((asset) => asset.source === "ironOre");
 
   const [marketResult, newsResult, gamesResult] = await Promise.allSettled([
     fetchMarketPayload(
-      yahooAssets.filter((asset) => asset.source === "yahoo").map((asset) => asset.symbol),
+      yahooAssets.map((asset) => asset.symbol),
       diAssets.map((asset) => asset.symbol),
-      tesouroAssets.map((asset) => asset.symbol)
+      tesouroAssets.map((asset) => asset.symbol),
+      ironOreAssets.map((asset) => asset.symbol)
     ),
     fetchNewsPayload(),
     fetchGamesPayload()
@@ -196,7 +205,7 @@ async function loadData() {
   }
 }
 
-async function fetchMarketPayload(yahooSymbols, diSymbols, tesouroSymbols) {
+async function fetchMarketPayload(yahooSymbols, diSymbols, tesouroSymbols, ironOreSymbols) {
   if (window.location.protocol === "file:") {
     throw new Error(
       "Abra a pagina pelo arquivo 'Abrir Pulse Terminal.bat' para iniciar o servidor local automaticamente."
@@ -204,33 +213,39 @@ async function fetchMarketPayload(yahooSymbols, diSymbols, tesouroSymbols) {
   }
 
   const requests = [
-    fetch(`/api/market?symbols=${encodeURIComponent(yahooSymbols.join(","))}`),
-    fetch(`/api/di-proxy?symbols=${encodeURIComponent(diSymbols.join(","))}`),
-    fetch(`/api/tesouro?symbols=${encodeURIComponent(tesouroSymbols.join(","))}`)
+    yahooSymbols.length ? fetch(`/api/market?symbols=${encodeURIComponent(yahooSymbols.join(","))}`) : Promise.resolve(null),
+    diSymbols.length ? fetch(`/api/di-proxy?symbols=${encodeURIComponent(diSymbols.join(","))}`) : Promise.resolve(null),
+    tesouroSymbols.length ? fetch(`/api/tesouro?symbols=${encodeURIComponent(tesouroSymbols.join(","))}`) : Promise.resolve(null),
+    ironOreSymbols.length ? fetch(`/api/iron-ore?symbols=${encodeURIComponent(ironOreSymbols.join(","))}`) : Promise.resolve(null)
   ];
 
-  const [marketResponse, diResponse, tesouroResponse] = await Promise.all(requests);
-  const [marketPayload, diPayload, tesouroPayload] = await Promise.all([
-    marketResponse.json(),
-    diResponse.json(),
-    tesouroResponse.json()
+  const [marketResponse, diResponse, tesouroResponse, ironOreResponse] = await Promise.all(requests);
+  const [marketPayload, diPayload, tesouroPayload, ironOrePayload] = await Promise.all([
+    marketResponse ? marketResponse.json() : { results: [] },
+    diResponse ? diResponse.json() : { results: [] },
+    tesouroResponse ? tesouroResponse.json() : { results: [] },
+    ironOreResponse ? ironOreResponse.json() : { results: [] }
   ]);
 
-  if (!marketResponse.ok) {
+  if (marketResponse && !marketResponse.ok) {
     throw new Error(marketPayload.error || "Falha ao consultar a API local.");
   }
 
-  if (!diResponse.ok) {
+  if (diResponse && !diResponse.ok) {
     throw new Error(diPayload.error || "Falha ao consultar a curva local dos DIs.");
   }
 
-  if (!tesouroResponse.ok) {
+  if (tesouroResponse && !tesouroResponse.ok) {
     throw new Error(tesouroPayload.error || "Falha ao consultar as taxas do Tesouro.");
   }
 
+  if (ironOreResponse && !ironOreResponse.ok) {
+    throw new Error(ironOrePayload.error || "Falha ao consultar o minerio de ferro.");
+  }
+
   return {
-    results: [...marketPayload.results, ...diPayload.results, ...tesouroPayload.results],
-    asOf: marketPayload.asOf || diPayload.asOf || tesouroPayload.asOf,
+    results: [...marketPayload.results, ...diPayload.results, ...tesouroPayload.results, ...ironOrePayload.results],
+    asOf: marketPayload.asOf || diPayload.asOf || tesouroPayload.asOf || ironOrePayload.asOf,
     mode: "proxy-local"
   };
 }
@@ -343,6 +358,7 @@ function renderLiveRow(asset, result) {
   }
 
   const priceFormatter = asset.formatter || inferFormatter(result.data.currency);
+  const displayPrice = getDisplayPrice(asset, result.data);
 
   return `
     <button type="button" class="table-row ${isActive ? "is-active" : ""}" data-symbol="${escapeHtml(asset.symbol)}">
@@ -354,7 +370,7 @@ function renderLiveRow(asset, result) {
         <span class="asset-symbol">${escapeHtml(asset.symbol)}</span>
       </div>
       <div class="spot-cell">
-        ${priceFormatter(result.data.regularMarketPrice)}
+        ${priceFormatter(displayPrice)}
         <span class="meta">${escapeHtml(result.data.currency || result.data.exchangeName || "Yahoo")}</span>
       </div>
       ${renderChangeCell(result.data.changes.day, asset, "day", result.data)}
@@ -545,6 +561,7 @@ function renderDetailPanel(config) {
   const firstLabel = filteredPoints[0];
   const lastLabel = filteredPoints[filteredPoints.length - 1];
   const displayName = data.shortName || asset.name;
+  const displayPrice = getDisplayPrice(asset, data, filteredPoints);
 
   groupEl.textContent = asset.group;
   nameEl.innerHTML = `
@@ -554,7 +571,7 @@ function renderDetailPanel(config) {
     </span>
   `;
   symbolEl.textContent = asset.symbol;
-  priceEl.textContent = formatter(data.regularMarketPrice);
+  priceEl.textContent = formatter(displayPrice);
   setChangeText(dayEl, data.changes.day, asset, "day", data);
   setChangeText(monthEl, data.changes.month, asset, "month", data);
   setChangeText(ytdEl, data.changes.ytd, asset, "ytd", data);
@@ -665,11 +682,15 @@ function destroyCharts() {
 }
 
 function renderProxyBadge(asset) {
-  if (asset.source !== "diProxy") {
-    return "";
+  if (asset.source === "diProxy") {
+    return `<span class="proxy-badge">ANBIMA proxy</span>`;
   }
 
-  return `<span class="proxy-badge">ANBIMA proxy</span>`;
+  if (asset.source === "ironOre") {
+    return `<span class="proxy-badge">1st fut</span>`;
+  }
+
+  return "";
 }
 
 function renderNewsLoading() {
@@ -919,6 +940,20 @@ function getFilteredPoints(points, range, zoomValue) {
   const ratio = Math.max(0.2, Math.min(1, zoomValue / 100));
   const visibleCount = Math.max(20, Math.floor(rangePoints.length * ratio));
   return rangePoints.slice(-visibleCount);
+}
+
+function getDisplayPrice(asset, data, filteredPoints = null) {
+  const preferredSeries = Array.isArray(filteredPoints) && filteredPoints.length
+    ? filteredPoints
+    : Array.isArray(data?.points)
+      ? data.points.filter((point) => Number.isFinite(point?.close))
+      : [];
+
+  if (preferredSeries.length) {
+    return preferredSeries[preferredSeries.length - 1].close;
+  }
+
+  return data?.regularMarketPrice;
 }
 
 function getClosestPastPoint(points, targetTimestamp) {

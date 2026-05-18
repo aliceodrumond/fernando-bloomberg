@@ -49,6 +49,7 @@ $PalmeirasApiRoot = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao/v1/jog
 $PalmeirasCalendarUrl = "https://www.palmeiras.com.br/calendario/"
 $FifaGamesUrl = "https://fifaworldcup26.suites.fifa.com/games/"
 $TesouroCsvUrl = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
+$IronOreUrl = "https://www.investing.com/commodities/iron-ore-62-cfr-futures"
 $UsTreasuryConfig = @{
   "UST_2Y" = @{ Column = "2 Yr"; Name = "UST 2y" }
   "UST_5Y" = @{ Column = "5 Yr"; Name = "UST 5y" }
@@ -223,6 +224,34 @@ function ConvertFrom-UsDate {
   catch {
     return $null
   }
+}
+
+function ConvertFrom-EnNumber {
+  param(
+    [Parameter(Mandatory = $false)] [string] $Value
+  )
+
+  $parsed = 0.0
+  $normalized = [string]$Value -replace ",", ""
+  if ([double]::TryParse($normalized, [ref]$parsed)) {
+    return $parsed
+  }
+
+  return $null
+}
+
+function Get-FaqMetric {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Html,
+    [Parameter(Mandatory = $true)] [string] $QuestionPattern
+  )
+
+  $match = [regex]::Match($Html, '"name":"' + $QuestionPattern + '","acceptedAnswer":\{"@type":"Answer","text":"([^"]+)')
+  if ($match.Success) {
+    return $match.Groups[1].Value
+  }
+
+  return ""
 }
 
 function Get-YahooChart {
@@ -508,6 +537,53 @@ function Get-UsTreasurySeries {
       month = if ($oneMonthReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$oneMonthReference.close) } else { $null }
       ytd = if ($ytdReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$ytdReference.close) } else { $null }
       year = if ($oneYearReference) { Get-PercentChange -Current ([double]$currentPoint.close) -Reference ([double]$oneYearReference.close) } else { $null }
+    }
+  }
+}
+
+function Get-IronOreSeries {
+  $response = Invoke-WebRequest -Uri $IronOreUrl -Headers @{ "User-Agent" = "Mozilla/5.0"; "Accept" = "text/html,application/xhtml+xml" } -Method Get -UseBasicParsing
+  $html = $response.Content
+
+  $currentText = Get-FaqMetric -Html $html -QuestionPattern "What Is the Current Price of Iron Ore 62% Futures\?"
+  $currentPrice = ConvertFrom-EnNumber -Value ([regex]::Match($currentText, "is ([0-9\.,]+)", "IgnoreCase").Groups[1].Value)
+  $previousClose = ConvertFrom-EnNumber -Value ([regex]::Match($currentText, "previous close of ([0-9\.,]+)", "IgnoreCase").Groups[1].Value)
+
+  $yearText = Get-FaqMetric -Html $html -QuestionPattern "How Much Has Iron Ore 62% Changed Over the Past Year\?"
+  if ([string]::IsNullOrWhiteSpace($yearText)) {
+    $yearText = Get-FaqMetric -Html $html -QuestionPattern "How Has Iron Ore 62% Futures Performed Over the Past Year\?"
+  }
+
+  $yearChange = ConvertFrom-EnNumber -Value ([regex]::Match($yearText, "changed by ([0-9\.\+\-]+)%", "IgnoreCase").Groups[1].Value)
+
+  if ($null -eq $currentPrice) {
+    throw "Nao foi possivel extrair o preco do minerio 62%."
+  }
+
+  $currentTimestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $yearReference = if ($null -ne $yearChange) { [double]$currentPrice / (1 + ([double]$yearChange / 100)) } else { $null }
+  $dayChange = if ($null -ne $previousClose -and [double]$previousClose -ne 0) { ((([double]$currentPrice / [double]$previousClose) - 1) * 100) } else { $null }
+
+  $points = @()
+  if ($null -ne $yearReference) {
+    $points += @{ timestamp = ($currentTimestamp - 366 * 24 * 60 * 60); close = [Math]::Round([double]$yearReference, 2) }
+  }
+  $points += @{ timestamp = $currentTimestamp; close = [Math]::Round([double]$currentPrice, 2) }
+
+  return @{
+    symbol = "SCOA"
+    currency = "USD"
+    exchangeName = "Iron Ore 62% 1st future"
+    shortName = "SCOA 1st future"
+    marketState = "Investing front future"
+    regularMarketPrice = [Math]::Round([double]$currentPrice, 2)
+    regularMarketTime = $currentTimestamp
+    points = $points
+    changes = @{
+      day = $dayChange
+      month = $null
+      ytd = $null
+      year = $yearChange
     }
   }
 }
@@ -1055,6 +1131,41 @@ try {
               continue
             }
 
+            $results += @{ ok = $true; symbol = $symbol; data = $data }
+          }
+          catch {
+            $results += @{ ok = $false; symbol = $symbol; error = $_.Exception.Message }
+          }
+        }
+
+        Send-Json -Response $response -StatusCode 200 -Payload @{
+          results = $results
+          asOf = [DateTime]::UtcNow.ToString("o")
+        }
+        continue
+      }
+
+      if ($path -eq "/api/iron-ore") {
+        $symbolsParam = $request.QueryString["symbols"]
+        $symbols = [string]$symbolsParam -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+
+        if ($symbols.Count -eq 0) {
+          Send-Json -Response $response -StatusCode 200 -Payload @{
+            results = @()
+            asOf = [DateTime]::UtcNow.ToString("o")
+          }
+          continue
+        }
+
+        $results = @()
+        foreach ($symbol in $symbols) {
+          if ($symbol -ne "SCOA") {
+            $results += @{ ok = $false; symbol = $symbol; error = "Ativo de minerio nao configurado." }
+            continue
+          }
+
+          try {
+            $data = Get-IronOreSeries
             $results += @{ ok = $true; symbol = $symbol; data = $data }
           }
           catch {

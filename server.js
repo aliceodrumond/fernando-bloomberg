@@ -44,6 +44,7 @@ const PALMEIRAS_API_ROOT = "https://apiverdao.palmeiras.com.br/wp-json/apiverdao
 const PALMEIRAS_CALENDAR_URL = "https://www.palmeiras.com.br/calendario/";
 const FIFA_GAMES_URL = "https://fifaworldcup26.suites.fifa.com/games/";
 const TESOURO_CSV_URL = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv";
+const IRON_ORE_URL = "https://www.investing.com/commodities/iron-ore-62-cfr-futures";
 const US_TREASURY_CONFIG = {
   UST_2Y: { column: "2 Yr", name: "UST 2y" },
   UST_5Y: { column: "5 Yr", name: "UST 5y" },
@@ -183,6 +184,71 @@ function parseCsvLine(line) {
   return String(line)
     .split(",")
     .map((item) => item.replace(/^"|"$/g, "").trim());
+}
+
+function parseEnNumber(value) {
+  const parsed = Number(String(value || "").replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseFaqMetric(html, questionPattern) {
+  const regex = new RegExp(`"name":"${questionPattern}","acceptedAnswer":\\{"@type":"Answer","text":"([^"]+)`, "i");
+  const match = html.match(regex);
+  return match ? match[1] : "";
+}
+
+async function fetchIronOreSeries() {
+  const response = await fetch(IRON_ORE_URL, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "text/html,application/xhtml+xml"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Fonte do minerio respondeu com status ${response.status}.`);
+  }
+
+  const html = await response.text();
+  const currentText = parseFaqMetric(html, "What Is the Current Price of Iron Ore 62% Futures\\?");
+  const currentPrice = parseEnNumber(currentText.match(/is ([0-9.,]+)/i)?.[1]);
+  const previousClose = parseEnNumber(currentText.match(/previous close of ([0-9.,]+)/i)?.[1]);
+  const yearText =
+    parseFaqMetric(html, "How Much Has Iron Ore 62% Changed Over the Past Year\\?") ||
+    parseFaqMetric(html, "How Has Iron Ore 62% Futures Performed Over the Past Year\\?");
+  const yearChange = parseEnNumber(yearText.match(/changed by ([0-9.+-]+)%/i)?.[1]);
+
+  if (!Number.isFinite(currentPrice)) {
+    throw new Error("Nao foi possivel extrair o preco do minerio 62%.");
+  }
+
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const yearReference = Number.isFinite(yearChange) ? currentPrice / (1 + yearChange / 100) : null;
+  const dayChange = Number.isFinite(previousClose) && previousClose !== 0
+    ? ((currentPrice / previousClose) - 1) * 100
+    : null;
+
+  return {
+    symbol: "SCOA",
+    currency: "USD",
+    exchangeName: "Iron Ore 62% 1st future",
+    shortName: "SCOA 1st future",
+    marketState: "Investing front future",
+    regularMarketPrice: Number(currentPrice.toFixed(2)),
+    regularMarketTime: currentTimestamp,
+    points: Number.isFinite(yearReference)
+      ? [
+          { timestamp: currentTimestamp - 366 * 24 * 60 * 60, close: Number(yearReference.toFixed(2)) },
+          { timestamp: currentTimestamp, close: Number(currentPrice.toFixed(2)) }
+        ]
+      : [{ timestamp: currentTimestamp, close: Number(currentPrice.toFixed(2)) }],
+    changes: {
+      day: dayChange,
+      month: null,
+      ytd: null,
+      year: yearChange
+    }
+  };
 }
 
 async function fetchYahooChart(symbol, range = "1y", interval = "1d") {
@@ -964,6 +1030,40 @@ async function handleTesouroApi(requestUrl, response) {
   sendJson(response, 200, { results, asOf: new Date().toISOString() });
 }
 
+async function handleIronOreApi(requestUrl, response) {
+  const symbolsParam = requestUrl.searchParams.get("symbols");
+  const symbols = String(symbolsParam || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!symbols.length) {
+    sendJson(response, 200, { results: [], asOf: new Date().toISOString() });
+    return;
+  }
+
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      if (symbol !== "SCOA") {
+        return { ok: false, symbol, error: "Ativo de minerio nao configurado." };
+      }
+
+      try {
+        const data = await fetchIronOreSeries();
+        return { ok: true, symbol, data };
+      } catch (error) {
+        return {
+          ok: false,
+          symbol,
+          error: error instanceof Error ? error.message : "Erro desconhecido."
+        };
+      }
+    })
+  );
+
+  sendJson(response, 200, { results, asOf: new Date().toISOString() });
+}
+
 async function handleNewsApi(response) {
   const [brazil, us, world] = await Promise.allSettled([
     fetchNewsFeedGroup(NEWS_FEEDS.brazil),
@@ -1046,6 +1146,17 @@ const server = http.createServer(async (request, response) => {
     } catch (error) {
       sendJson(response, 500, {
         error: error instanceof Error ? error.message : "Falha inesperada."
+      });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/iron-ore") {
+    try {
+      await handleIronOreApi(requestUrl, response);
+    } catch (error) {
+      sendJson(response, 500, {
+        error: error instanceof Error ? error.message : "Falha ao consultar o minerio."
       });
     }
     return;
